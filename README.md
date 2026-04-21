@@ -6,8 +6,8 @@ Inspired by [simonw/tools](https://github.com/simonw/tools).
 
 ## Tools
 
-[SVG → macOS Icon](https://ariera.github.io/tools/svg-to-icns/) — convert an SVG into a .icns file with all standard sizes
-[UTF Character Inspector](https://ariera.github.io/tools/utf-detector/) — detect invisible and unusual Unicode characters in pasted text
+- [SVG → macOS Icon](https://ariera.github.io/tools/svg-to-icns/) — convert an SVG into a .icns file with all standard sizes
+- [UTF Character Inspector](https://ariera.github.io/tools/utf-detector/) — detect invisible and unusual Unicode characters in pasted text
 
 ## Adding a tool
 
