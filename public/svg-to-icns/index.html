@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVG → macOS Icon</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+      gap: 2rem;
+    }
+
+    nav {
+      position: fixed;
+      top: 1rem;
+      left: 1.5rem;
+      font-size: 0.85rem;
+    }
+
+    nav a {
+      color: #0071e3;
+      text-decoration: none;
+    }
+
+    nav a:hover { text-decoration: underline; }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    h1 span { color: #0071e3; }
+
+    .card {
+      background: #fff;
+      border-radius: 18px;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+      padding: 2rem;
+      width: 100%;
+      max-width: 580px;
+    }
+
+    /* Drop zone */
+    .dropzone {
+      border: 2px dashed #c7c7cc;
+      border-radius: 12px;
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+
+    .dropzone:hover, .dropzone.drag-over {
+      border-color: #0071e3;
+      background: #f0f7ff;
+    }
+
+    .dropzone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .dropzone-icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .dropzone p {
+      color: #6e6e73;
+      font-size: 0.95rem;
+    }
+
+    .dropzone p strong { color: #0071e3; }
+
+    /* Preview */
+    #preview-section { display: none; }
+    #preview-section h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #6e6e73;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 1rem;
+    }
+
+    .preview-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+
+    .preview-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .preview-item canvas {
+      border-radius: 22%;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.15);
+      image-rendering: -webkit-optimize-contrast;
+    }
+
+    .preview-item span {
+      font-size: 0.7rem;
+      color: #6e6e73;
+    }
+
+    /* Buttons */
+    .actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 0.6rem 1.3rem;
+      border-radius: 980px;
+      border: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    button:active { transform: scale(0.97); }
+
+    .btn-primary {
+      background: #0071e3;
+      color: #fff;
+    }
+
+    .btn-primary:hover { background: #0077ed; }
+    .btn-primary:disabled { background: #c7c7cc; cursor: not-allowed; transform: none; }
+
+    .btn-secondary {
+      background: #e8e8ed;
+      color: #1d1d1f;
+    }
+
+    .btn-secondary:hover { background: #dcdce0; }
+
+    /* Status */
+    #status {
+      font-size: 0.85rem;
+      color: #6e6e73;
+      min-height: 1.2em;
+      text-align: center;
+    }
+
+    #status.error { color: #ff3b30; }
+    #status.success { color: #34c759; }
+
+    footer {
+      font-size: 0.8rem;
+      color: #aeaeb2;
+    }
+  </style>
+</head>
+<body>
+
+  <nav><a href="/tools/">← All tools</a></nav>
+
+  <h1>SVG → <span>macOS</span> Icon</h1>
+
+  <div class="card">
+    <div class="dropzone" id="dropzone">
+      <input type="file" id="file-input" accept=".svg,image/svg+xml">
+      <div class="dropzone-icon">🎨</div>
+      <p><strong>Choose SVG</strong> or drag it here</p>
+      <p style="margin-top:0.4rem">Generates a .icns file with all standard sizes</p>
+    </div>
+
+    <div id="preview-section" style="margin-top:1.5rem">
+      <h2>Preview</h2>
+      <div class="preview-row" id="preview-row"></div>
+      <div class="actions">
+        <button class="btn-primary" id="btn-icns">Download .icns</button>
+        <button class="btn-secondary" id="btn-iconset">Download .iconset ZIP</button>
+        <button class="btn-secondary" id="btn-reset">Reset</button>
+      </div>
+    </div>
+
+    <p id="status" style="margin-top:1rem"></p>
+  </div>
+
+  <footer>Works entirely in your browser — no upload to any server.</footer>
+
+  <!-- JSZip for the optional iconset ZIP export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
+          integrity="sha512-XMVd28F1oH/O71fzwBnV7HucLxVwtxf26XV8P4wPk26EDxuGZ91N8bsOttmnomcCD3CS5ZMRL50H0GgOHvegtg=="
+          crossorigin="anonymous"></script>
+
+  <script>
+    // ── Icon size definitions ────────────────────────────────────────────────
+    const ICON_DEFS = [
+      { ostype: 'icp4', size: 16  },
+      { ostype: 'icp5', size: 32  },
+      { ostype: 'icp6', size: 64  },
+      { ostype: 'ic07', size: 128 },
+      { ostype: 'ic08', size: 256 },
+      { ostype: 'ic09', size: 512 },
+      { ostype: 'ic10', size: 1024 },
+    ];
+
+    // Sizes shown in the preview row (skip 1024 — too big to render inline)
+    const PREVIEW_SIZES = [16, 32, 64, 128, 256, 512];
+
+    // ── State ────────────────────────────────────────────────────────────────
+    let svgDataUrl = null;
+    let generatedCanvases = {}; // size → canvas
+
+    // ── DOM refs ─────────────────────────────────────────────────────────────
+    const dropzone    = document.getElementById('dropzone');
+    const fileInput   = document.getElementById('file-input');
+    const previewSec  = document.getElementById('preview-section');
+    const previewRow  = document.getElementById('preview-row');
+    const statusEl    = document.getElementById('status');
+    const btnIcns     = document.getElementById('btn-icns');
+    const btnIconset  = document.getElementById('btn-iconset');
+    const btnReset    = document.getElementById('btn-reset');
+
+    // ── Drag-and-drop ────────────────────────────────────────────────────────
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+    dropzone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropzone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) handleFile(file);
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) handleFile(fileInput.files[0]);
+    });
+
+    btnReset.addEventListener('click', reset);
+
+    // ── File handling ─────────────────────────────────────────────────────────
+    function handleFile(file) {
+      if (!file.type.includes('svg') && !file.name.endsWith('.svg')) {
+        setStatus('Please upload an SVG file.', 'error');
+        return;
+      }
+      setStatus('Loading…');
+      const reader = new FileReader();
+      reader.onload = e => {
+        svgDataUrl = e.target.result;
+        generatePreviews();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // ── Render SVG → canvas ──────────────────────────────────────────────────
+    function renderSvgToCanvas(dataUrl, size) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width  = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, size, size);
+          ctx.drawImage(img, 0, 0, size, size);
+          resolve(canvas);
+        };
+        img.onerror = () => reject(new Error(`Failed to render at ${size}px`));
+        img.src = dataUrl;
+      });
+    }
+
+    // ── Canvas → PNG bytes ───────────────────────────────────────────────────
+    function canvasToPngBytes(canvas) {
+      return new Promise((resolve, reject) => {
+        canvas.toBlob(async blob => {
+          if (!blob) return reject(new Error('toBlob failed'));
+          resolve(new Uint8Array(await blob.arrayBuffer()));
+        }, 'image/png');
+      });
+    }
+
+    // ── Build ICNS binary ────────────────────────────────────────────────────
+    async function buildIcns(canvasMap) {
+      // Collect PNG bytes for each icon definition
+      const entries = [];
+      for (const def of ICON_DEFS) {
+        const canvas = canvasMap[def.size];
+        if (!canvas) continue;
+        const pngBytes = await canvasToPngBytes(canvas);
+        entries.push({ ostype: def.ostype, data: pngBytes });
+      }
+
+      // Calculate total ICNS file size
+      const headerSize = 8;
+      const totalSize  = entries.reduce((acc, e) => acc + 8 + e.data.length, headerSize);
+
+      const buffer = new ArrayBuffer(totalSize);
+      const view   = new DataView(buffer);
+      const bytes  = new Uint8Array(buffer);
+
+      // ICNS header
+      bytes[0] = 0x69; bytes[1] = 0x63; bytes[2] = 0x6e; bytes[3] = 0x73; // 'icns'
+      view.setUint32(4, totalSize, false); // big-endian
+
+      let offset = 8;
+      for (const entry of entries) {
+        // OSType (4 ASCII chars)
+        for (let i = 0; i < 4; i++) bytes[offset + i] = entry.ostype.charCodeAt(i);
+        // Entry length = 8 header + PNG data
+        view.setUint32(offset + 4, 8 + entry.data.length, false);
+        // PNG payload
+        bytes.set(entry.data, offset + 8);
+        offset += 8 + entry.data.length;
+      }
+
+      return bytes;
+    }
+
+    // ── Build iconset ZIP ─────────────────────────────────────────────────────
+    // Mirrors the AppIcon.iconset folder structure consumed by `iconutil`
+    const ICONSET_FILES = [
+      { size: 16,  scale: 1, name: 'icon_16x16.png'      },
+      { size: 32,  scale: 2, name: 'icon_16x16@2x.png'   },
+      { size: 32,  scale: 1, name: 'icon_32x32.png'      },
+      { size: 64,  scale: 2, name: 'icon_32x32@2x.png'   },
+      { size: 128, scale: 1, name: 'icon_128x128.png'    },
+      { size: 256, scale: 2, name: 'icon_128x128@2x.png' },
+      { size: 256, scale: 1, name: 'icon_256x256.png'    },
+      { size: 512, scale: 2, name: 'icon_256x256@2x.png' },
+      { size: 512, scale: 1, name: 'icon_512x512.png'    },
+      { size: 1024,scale: 2, name: 'icon_512x512@2x.png' },
+    ];
+
+    async function buildIconsetZip(canvasMap) {
+      const zip    = new JSZip();
+      const folder = zip.folder('AppIcon.iconset');
+      for (const entry of ICONSET_FILES) {
+        const canvas = canvasMap[entry.size];
+        if (!canvas) continue;
+        const pngBytes = await canvasToPngBytes(canvas);
+        folder.file(entry.name, pngBytes);
+      }
+      return zip.generateAsync({ type: 'uint8array' });
+    }
+
+    // ── Generate previews ─────────────────────────────────────────────────────
+    async function generatePreviews() {
+      setStatus('Rendering…');
+      previewRow.innerHTML = '';
+      generatedCanvases = {};
+
+      try {
+        // Render all sizes
+        const allSizes = [...new Set(ICON_DEFS.map(d => d.size))];
+        await Promise.all(allSizes.map(async size => {
+          generatedCanvases[size] = await renderSvgToCanvas(svgDataUrl, size);
+        }));
+
+        // Show small previews (cap display size at 64px to stay compact)
+        for (const size of PREVIEW_SIZES) {
+          const canvas = generatedCanvases[size];
+          if (!canvas) continue;
+
+          const displaySize = Math.min(size, 64);
+          const displayCanvas = document.createElement('canvas');
+          displayCanvas.width  = displaySize;
+          displayCanvas.height = displaySize;
+          displayCanvas.style.width  = displaySize + 'px';
+          displayCanvas.style.height = displaySize + 'px';
+          const dCtx = displayCanvas.getContext('2d');
+          dCtx.drawImage(canvas, 0, 0, displaySize, displaySize);
+
+          const item = document.createElement('div');
+          item.className = 'preview-item';
+          item.appendChild(displayCanvas);
+          const label = document.createElement('span');
+          label.textContent = `${size}px`;
+          item.appendChild(label);
+          previewRow.appendChild(item);
+        }
+
+        previewSec.style.display = 'block';
+        setStatus('Ready — choose a download format.', 'success');
+      } catch (err) {
+        setStatus('Render failed: ' + err.message, 'error');
+      }
+    }
+
+    // ── Download handlers ─────────────────────────────────────────────────────
+    btnIcns.addEventListener('click', async () => {
+      btnIcns.disabled = true;
+      setStatus('Building .icns…');
+      try {
+        const bytes = await buildIcns(generatedCanvases);
+        downloadBytes(bytes, 'AppIcon.icns', 'image/x-icns');
+        setStatus('Downloaded AppIcon.icns', 'success');
+      } catch (err) {
+        setStatus('Error: ' + err.message, 'error');
+      } finally {
+        btnIcns.disabled = false;
+      }
+    });
+
+    btnIconset.addEventListener('click', async () => {
+      btnIconset.disabled = true;
+      setStatus('Building iconset ZIP…');
+      try {
+        const bytes = await buildIconsetZip(generatedCanvases);
+        downloadBytes(bytes, 'AppIcon.iconset.zip', 'application/zip');
+        setStatus('Downloaded AppIcon.iconset.zip — unzip and run: iconutil -c icns AppIcon.iconset', 'success');
+      } catch (err) {
+        setStatus('Error: ' + err.message, 'error');
+      } finally {
+        btnIconset.disabled = false;
+      }
+    });
+
+    // ── Utilities ─────────────────────────────────────────────────────────────
+    function downloadBytes(bytes, filename, mime) {
+      const blob = new Blob([bytes], { type: mime });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function setStatus(msg, type = '') {
+      statusEl.textContent = msg;
+      statusEl.className   = type;
+    }
+
+    function reset() {
+      svgDataUrl = null;
+      generatedCanvases = {};
+      previewSec.style.display = 'none';
+      previewRow.innerHTML = '';
+      fileInput.value = '';
+      setStatus('');
+    }
+  </script>
+</body>
+</html>

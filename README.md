@@ -6,9 +6,7 @@ Inspired by [simonw/tools](https://github.com/simonw/tools).
 
 ## Tools
 
-<!-- tools go here, one line per tool:
-[Tool Name](https://ariera.github.io/tools/tool-name/) — one line description
--->
+[SVG → macOS Icon](https://ariera.github.io/tools/svg-to-icns/) — convert an SVG into a .icns file with all standard sizes
 
 ## Adding a tool
 
