@@ -88,16 +88,53 @@
 
     .dropzone p strong { color: #0071e3; }
 
-    /* Preview */
-    #preview-section { display: none; }
-    #preview-section h2 {
-      font-size: 1rem;
+    /* Size options */
+    .section-label {
+      font-size: 0.8rem;
       font-weight: 600;
       color: #6e6e73;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      margin-bottom: 1rem;
+      margin-bottom: 0.6rem;
     }
+
+    .size-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+
+    .size-label {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.82rem;
+      cursor: pointer;
+      padding: 0.25rem 0.65rem;
+      border-radius: 8px;
+      border: 1px solid #c7c7cc;
+      transition: border-color 0.15s, background 0.15s;
+      user-select: none;
+    }
+
+    .size-label:hover {
+      border-color: #0071e3;
+      background: #f0f7ff;
+    }
+
+    .size-label input[type="checkbox"] {
+      accent-color: #0071e3;
+    }
+
+    .size-hint {
+      font-size: 0.72rem;
+      color: #aeaeb2;
+      margin-top: 0.4rem;
+    }
+
+    /* Preview */
+    #preview-section { display: none; }
+    #preview-section .section-label { margin-bottom: 1rem; }
 
     .preview-row {
       display: flex;
@@ -105,6 +142,7 @@
       gap: 1rem;
       flex-wrap: wrap;
       margin-bottom: 1.5rem;
+      min-height: 2rem;
     }
 
     .preview-item {
@@ -190,8 +228,22 @@
       <p style="margin-top:0.4rem">Generates a .icns file with all standard sizes</p>
     </div>
 
+    <div style="margin-top:1.5rem">
+      <h2 class="section-label">Sizes</h2>
+      <div class="size-grid">
+        <label class="size-label"><input type="checkbox" class="size-cb" value="16"> 16×16</label>
+        <label class="size-label"><input type="checkbox" class="size-cb" value="32"> 32×32</label>
+        <label class="size-label"><input type="checkbox" class="size-cb" value="64"> 64×64</label>
+        <label class="size-label"><input type="checkbox" class="size-cb" value="128" checked> 128×128</label>
+        <label class="size-label"><input type="checkbox" class="size-cb" value="256" checked> 256×256</label>
+        <label class="size-label"><input type="checkbox" class="size-cb" value="512" checked> 512×512</label>
+        <label class="size-label"><input type="checkbox" class="size-cb" value="1024" checked> 1024×1024</label>
+      </div>
+      <p class="size-hint">16–64 px entries use older ICNS codes that macOS may misrender in Finder list view. macOS scales cleanly from 128 px.</p>
+    </div>
+
     <div id="preview-section" style="margin-top:1.5rem">
-      <h2>Preview</h2>
+      <h2 class="section-label">Preview</h2>
       <div class="preview-row" id="preview-row"></div>
       <div class="actions">
         <button class="btn-primary" id="btn-icns">Download .icns</button>
@@ -211,19 +263,32 @@
           crossorigin="anonymous"></script>
 
   <script>
-    // ── Icon size definitions ────────────────────────────────────────────────
-    const ICON_DEFS = [
-      { ostype: 'icp4', size: 16  },
-      { ostype: 'icp5', size: 32  },
-      { ostype: 'icp6', size: 64  },
-      { ostype: 'ic07', size: 128 },
-      { ostype: 'ic08', size: 256 },
-      { ostype: 'ic09', size: 512 },
+    // icp4/icp5/icp6 (16/32/64 px) use an older ICNS code family that macOS
+    // may misinterpret when the PNG is canvas-generated, producing garbage in
+    // Finder list view. ic07+ (128 px and above) are decoded reliably.
+    const ALL_ICON_DEFS = [
+      { ostype: 'icp4', size: 16   },
+      { ostype: 'icp5', size: 32   },
+      { ostype: 'icp6', size: 64   },
+      { ostype: 'ic07', size: 128  },
+      { ostype: 'ic08', size: 256  },
+      { ostype: 'ic09', size: 512  },
       { ostype: 'ic10', size: 1024 },
     ];
 
-    // Sizes shown in the preview row (skip 1024 — too big to render inline)
-    const PREVIEW_SIZES = [16, 32, 64, 128, 256, 512];
+    // Iconset folder structure consumed by `iconutil -c icns`
+    const ICONSET_FILES = [
+      { size: 16,   name: 'icon_16x16.png'      },
+      { size: 32,   name: 'icon_16x16@2x.png'   },
+      { size: 32,   name: 'icon_32x32.png'       },
+      { size: 64,   name: 'icon_32x32@2x.png'   },
+      { size: 128,  name: 'icon_128x128.png'     },
+      { size: 256,  name: 'icon_128x128@2x.png'  },
+      { size: 256,  name: 'icon_256x256.png'     },
+      { size: 512,  name: 'icon_256x256@2x.png'  },
+      { size: 512,  name: 'icon_512x512.png'     },
+      { size: 1024, name: 'icon_512x512@2x.png'  },
+    ];
 
     // ── State ────────────────────────────────────────────────────────────────
     let svgDataUrl = null;
@@ -255,6 +320,12 @@
 
     btnReset.addEventListener('click', reset);
 
+    document.querySelectorAll('.size-cb').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (Object.keys(generatedCanvases).length > 0) updatePreview();
+      });
+    });
+
     // ── File handling ─────────────────────────────────────────────────────────
     function handleFile(file) {
       if (!file.type.includes('svg') && !file.name.endsWith('.svg')) {
@@ -270,6 +341,11 @@
       reader.readAsDataURL(file);
     }
 
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function getSelectedSizes() {
+      return [...document.querySelectorAll('.size-cb:checked')].map(cb => parseInt(cb.value));
+    }
+
     // ── Render SVG → canvas ──────────────────────────────────────────────────
     function renderSvgToCanvas(dataUrl, size) {
       return new Promise((resolve, reject) => {
@@ -279,8 +355,24 @@
           canvas.width  = size;
           canvas.height = size;
           const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
           ctx.clearRect(0, 0, size, size);
-          ctx.drawImage(img, 0, 0, size, size);
+
+          if (size < 512) {
+            // Render at 512 px first then scale down — avoids SVG rasterisation
+            // artifacts that appear when drawing directly at tiny sizes.
+            const tmp = document.createElement('canvas');
+            tmp.width  = 512;
+            tmp.height = 512;
+            const tCtx = tmp.getContext('2d');
+            tCtx.clearRect(0, 0, 512, 512);
+            tCtx.drawImage(img, 0, 0, 512, 512);
+            ctx.drawImage(tmp, 0, 0, size, size);
+          } else {
+            ctx.drawImage(img, 0, 0, size, size);
+          }
+
           resolve(canvas);
         };
         img.onerror = () => reject(new Error(`Failed to render at ${size}px`));
@@ -300,16 +392,18 @@
 
     // ── Build ICNS binary ────────────────────────────────────────────────────
     async function buildIcns(canvasMap) {
-      // Collect PNG bytes for each icon definition
+      const selectedSizes = getSelectedSizes();
+      if (selectedSizes.length === 0) throw new Error('No sizes selected.');
+
       const entries = [];
-      for (const def of ICON_DEFS) {
+      for (const def of ALL_ICON_DEFS) {
+        if (!selectedSizes.includes(def.size)) continue;
         const canvas = canvasMap[def.size];
         if (!canvas) continue;
         const pngBytes = await canvasToPngBytes(canvas);
         entries.push({ ostype: def.ostype, data: pngBytes });
       }
 
-      // Calculate total ICNS file size
       const headerSize = 8;
       const totalSize  = entries.reduce((acc, e) => acc + 8 + e.data.length, headerSize);
 
@@ -317,17 +411,13 @@
       const view   = new DataView(buffer);
       const bytes  = new Uint8Array(buffer);
 
-      // ICNS header
       bytes[0] = 0x69; bytes[1] = 0x63; bytes[2] = 0x6e; bytes[3] = 0x73; // 'icns'
-      view.setUint32(4, totalSize, false); // big-endian
+      view.setUint32(4, totalSize, false);
 
       let offset = 8;
       for (const entry of entries) {
-        // OSType (4 ASCII chars)
         for (let i = 0; i < 4; i++) bytes[offset + i] = entry.ostype.charCodeAt(i);
-        // Entry length = 8 header + PNG data
         view.setUint32(offset + 4, 8 + entry.data.length, false);
-        // PNG payload
         bytes.set(entry.data, offset + 8);
         offset += 8 + entry.data.length;
       }
@@ -336,24 +426,12 @@
     }
 
     // ── Build iconset ZIP ─────────────────────────────────────────────────────
-    // Mirrors the AppIcon.iconset folder structure consumed by `iconutil`
-    const ICONSET_FILES = [
-      { size: 16,  scale: 1, name: 'icon_16x16.png'      },
-      { size: 32,  scale: 2, name: 'icon_16x16@2x.png'   },
-      { size: 32,  scale: 1, name: 'icon_32x32.png'      },
-      { size: 64,  scale: 2, name: 'icon_32x32@2x.png'   },
-      { size: 128, scale: 1, name: 'icon_128x128.png'    },
-      { size: 256, scale: 2, name: 'icon_128x128@2x.png' },
-      { size: 256, scale: 1, name: 'icon_256x256.png'    },
-      { size: 512, scale: 2, name: 'icon_256x256@2x.png' },
-      { size: 512, scale: 1, name: 'icon_512x512.png'    },
-      { size: 1024,scale: 2, name: 'icon_512x512@2x.png' },
-    ];
-
     async function buildIconsetZip(canvasMap) {
+      const selectedSizes = getSelectedSizes();
       const zip    = new JSZip();
       const folder = zip.folder('AppIcon.iconset');
       for (const entry of ICONSET_FILES) {
+        if (!selectedSizes.includes(entry.size)) continue;
         const canvas = canvasMap[entry.size];
         if (!canvas) continue;
         const pngBytes = await canvasToPngBytes(canvas);
@@ -362,46 +440,46 @@
       return zip.generateAsync({ type: 'uint8array' });
     }
 
-    // ── Generate previews ─────────────────────────────────────────────────────
+    // ── Generate all canvases, then show preview ──────────────────────────────
     async function generatePreviews() {
       setStatus('Rendering…');
       previewRow.innerHTML = '';
       generatedCanvases = {};
 
       try {
-        // Render all sizes
-        const allSizes = [...new Set(ICON_DEFS.map(d => d.size))];
-        await Promise.all(allSizes.map(async size => {
+        await Promise.all(ALL_ICON_DEFS.map(async ({ size }) => {
           generatedCanvases[size] = await renderSvgToCanvas(svgDataUrl, size);
         }));
 
-        // Show small previews (cap display size at 64px to stay compact)
-        for (const size of PREVIEW_SIZES) {
-          const canvas = generatedCanvases[size];
-          if (!canvas) continue;
-
-          const displaySize = Math.min(size, 64);
-          const displayCanvas = document.createElement('canvas');
-          displayCanvas.width  = displaySize;
-          displayCanvas.height = displaySize;
-          displayCanvas.style.width  = displaySize + 'px';
-          displayCanvas.style.height = displaySize + 'px';
-          const dCtx = displayCanvas.getContext('2d');
-          dCtx.drawImage(canvas, 0, 0, displaySize, displaySize);
-
-          const item = document.createElement('div');
-          item.className = 'preview-item';
-          item.appendChild(displayCanvas);
-          const label = document.createElement('span');
-          label.textContent = `${size}px`;
-          item.appendChild(label);
-          previewRow.appendChild(item);
-        }
-
+        updatePreview();
         previewSec.style.display = 'block';
         setStatus('Ready — choose a download format.', 'success');
       } catch (err) {
         setStatus('Render failed: ' + err.message, 'error');
+      }
+    }
+
+    function updatePreview() {
+      previewRow.innerHTML = '';
+      for (const size of getSelectedSizes()) {
+        const canvas = generatedCanvases[size];
+        if (!canvas) continue;
+
+        const displaySize = Math.min(size, 64);
+        const displayCanvas = document.createElement('canvas');
+        displayCanvas.width  = displaySize;
+        displayCanvas.height = displaySize;
+        displayCanvas.style.width  = displaySize + 'px';
+        displayCanvas.style.height = displaySize + 'px';
+        displayCanvas.getContext('2d').drawImage(canvas, 0, 0, displaySize, displaySize);
+
+        const item = document.createElement('div');
+        item.className = 'preview-item';
+        item.appendChild(displayCanvas);
+        const label = document.createElement('span');
+        label.textContent = `${size}px`;
+        item.appendChild(label);
+        previewRow.appendChild(item);
       }
     }
 
