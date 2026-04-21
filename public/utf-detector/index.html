@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UTF Character Inspector</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      nav { padding: 0.75rem 1rem; font-size: 0.85rem; }
+      nav a { color: #0066cc; text-decoration: none; }
+      nav a:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <nav><a href="/tools/">← All tools</a></nav>
+    <main class="app">
+      <header>
+        <h1>UTF Character Inspector</h1>
+        <p>
+          Paste text below, then inspect line breaks, control characters, zero-width marks,
+          and other unusual Unicode characters.
+        </p>
+      </header>
+
+      <section class="panel input-panel">
+        <label for="inputText">Input text</label>
+        <textarea id="inputText" spellcheck="false" placeholder="Paste text here..."></textarea>
+        <div class="actions">
+          <button id="analyzeBtn" type="button">Analyze text</button>
+          <button id="clearBtn" type="button" class="secondary">Clear</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>Rendered output</h2>
+          <p id="activeFilter" class="active-filter">Showing: all flagged characters</p>
+        </div>
+        <div id="renderedText" class="rendered-text" aria-live="polite"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>Detected flagged characters</h2>
+          <p id="summaryText" class="summary-text">No analysis yet.</p>
+        </div>
+        <table class="result-table" aria-label="Detected characters">
+          <thead>
+            <tr>
+              <th>Character</th>
+              <th>UTF Code</th>
+              <th>Decimal</th>
+              <th>Times New Roman</th>
+              <th>Helvetica</th>
+              <th>Name</th>
+              <th>Count</th>
+            </tr>
+          </thead>
+          <tbody id="resultBody"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <script src="font-support-data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

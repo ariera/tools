@@ -1,0 +1,199 @@
+:root {
+  --bg: #f3f1eb;
+  --panel: #fffefb;
+  --ink: #1d2428;
+  --muted: #5f6a70;
+  --border: #d8d4c8;
+  --accent: #054a91;
+  --alert-bg: #ffef87;
+  --alert-ink: #4a3000;
+  --alert-strong: #ff8f00;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at 15% 10%, #fff7d6 0%, transparent 30%),
+    radial-gradient(circle at 85% 90%, #d5f4ff 0%, transparent 35%),
+    var(--bg);
+  color: var(--ink);
+}
+
+.app {
+  max-width: 1100px;
+  margin: 2rem auto;
+  padding: 0 1rem 3rem;
+}
+
+header h1 {
+  margin: 0;
+  font-size: clamp(1.6rem, 1.2rem + 1.6vw, 2.3rem);
+}
+
+header p {
+  margin-top: 0.5rem;
+  color: var(--muted);
+  max-width: 70ch;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1rem;
+  margin-top: 1rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.input-panel label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+textarea {
+  width: 100%;
+  min-height: 180px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 0.85rem;
+  font: 500 0.95rem/1.4 "IBM Plex Mono", "Fira Code", monospace;
+  background: #fff;
+  color: var(--ink);
+  resize: vertical;
+}
+
+.actions {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+button {
+  appearance: none;
+  border: 0;
+  border-radius: 10px;
+  padding: 0.6rem 0.95rem;
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+button.secondary {
+  background: #6d7479;
+}
+
+.panel-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.panel-title-row h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.active-filter,
+.summary-text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.rendered-text {
+  margin-top: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  min-height: 180px;
+  padding: 0.9rem;
+  font: 500 0.95rem/1.5 "IBM Plex Mono", "Fira Code", monospace;
+  background: #fff;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.flagged {
+  position: relative;
+  background: var(--alert-bg);
+  color: var(--alert-ink);
+  outline: 2px solid transparent;
+  border-radius: 3px;
+}
+
+.flagged.reduced {
+  opacity: 0.28;
+}
+
+.flagged.active {
+  background: #ffd03b;
+  outline-color: var(--alert-strong);
+}
+
+.result-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.65rem;
+}
+
+.result-table th,
+.result-table td {
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  padding: 0.6rem 0.5rem;
+  vertical-align: top;
+}
+
+.result-table th {
+  font-size: 0.9rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.result-table tbody tr {
+  cursor: pointer;
+}
+
+.result-table tbody tr:hover {
+  background: #f4f9ff;
+}
+
+.result-table tbody tr.selected {
+  background: #e5f1ff;
+}
+
+.char-cell {
+  font: 700 0.95rem/1.2 "IBM Plex Mono", "Fira Code", monospace;
+}
+
+.tag {
+  display: inline-block;
+  border-radius: 4px;
+  border: 1px solid #d6cfb0;
+  background: #fffbe0;
+  padding: 0.05rem 0.25rem;
+}
+
+.empty-state {
+  color: var(--muted);
+  padding: 0.45rem 0;
+}
+
+@media (max-width: 720px) {
+  .app {
+    margin-top: 1rem;
+  }
+
+  .rendered-text,
+  textarea {
+    min-height: 150px;
+  }
+}
