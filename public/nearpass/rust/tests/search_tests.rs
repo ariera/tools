@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use string_neighborhood_kata::{
-    enumerate_candidates, CandidateEnumerator, EnabledOperations, KeyboardNeighbors,
-    SearchCheckpointFile, SearchConfig,
+    count_candidates, enumerate_candidates, CandidateEnumerator, EnabledOperations,
+    KeyboardNeighbors, SearchCheckpointFile, SearchConfig,
 };
 
 fn temp_checkpoint_path(prefix: &str) -> PathBuf {
@@ -272,4 +272,12 @@ fn serializes_checkpoint_to_disk_and_restores_it() {
 
     let _ = fs::remove_file(&path);
     assert_eq!(tail, full[1..].to_vec());
+}
+
+#[test]
+fn counts_candidates_without_collecting_them() {
+    let config = SearchConfig::new("a", vec!['a', 'b'], 1, 1, KeyboardNeighbors::empty()).unwrap();
+    let count = count_candidates(&config).unwrap();
+
+    assert_eq!(count, 6);
 }

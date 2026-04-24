@@ -2,7 +2,9 @@ use std::io::{self, BufWriter, Write};
 use std::process::ExitCode;
 
 use clap::{Parser, ValueEnum};
-use string_neighborhood_kata::{CandidateEnumerator, KeyboardNeighbors, SearchConfig};
+use string_neighborhood_kata::{
+    count_candidates, CandidateEnumerator, KeyboardNeighbors, SearchConfig,
+};
 
 /// Enumerate strings in a bounded edit-distance neighborhood of a seed.
 #[derive(Parser, Debug)]
@@ -34,6 +36,10 @@ struct Cli {
     /// Print at most N candidates (0 = no limit)
     #[arg(long, default_value_t = 0)]
     limit: usize,
+
+    /// Print only the total number of combinations in the simplified insert/delete/replace model
+    #[arg(long)]
+    count: bool,
 
     /// Suppress the trailing "N candidates" status line on stderr
     #[arg(long)]
@@ -129,6 +135,12 @@ mod tests {
 
         assert!(alphabet.contains(&' '));
     }
+
+    #[test]
+    fn count_flag_parses() {
+        let cli = Cli::try_parse_from(["enumerate", "abc", "--count"]).unwrap();
+        assert!(cli.count);
+    }
 }
 
 fn main() -> ExitCode {
@@ -152,6 +164,18 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+
+    if cli.count {
+        let count = match count_candidates(&config) {
+            Ok(count) => count,
+            Err(err) => {
+                eprintln!("error: {err}");
+                return ExitCode::from(1);
+            }
+        };
+        println!("{count}");
+        return ExitCode::SUCCESS;
+    }
 
     let stdout = io::stdout();
     let mut out = BufWriter::new(stdout.lock());

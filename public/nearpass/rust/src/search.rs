@@ -314,3 +314,115 @@ impl SearchCheckpointFile {
 pub fn enumerate_candidates(config: &SearchConfig) -> Result<Vec<String>, String> {
     Ok(CandidateEnumerator::new(config).collect())
 }
+
+pub fn count_candidates(config: &SearchConfig) -> Result<u128, String> {
+    count_combinatorial_candidates(config)
+}
+
+fn count_combinatorial_candidates(config: &SearchConfig) -> Result<u128, String> {
+    let seed_len = config.seed_chars.len();
+    let alphabet_len = config.alphabet.len();
+    if alphabet_len == 0 {
+        return Ok(0);
+    }
+
+    let mut total = 0u128;
+    for distance in config.min_distance..=config.max_distance {
+        let distance_total = count_exact_distance_combinations(
+            seed_len,
+            alphabet_len,
+            distance,
+            config.enabled_operations,
+        )?;
+        total = total
+            .checked_add(distance_total)
+            .ok_or_else(|| "candidate count overflowed u128".to_string())?;
+    }
+    Ok(total)
+}
+
+fn count_exact_distance_combinations(
+    seed_len: usize,
+    alphabet_len: usize,
+    distance: usize,
+    ops: crate::config::EnabledOperations,
+) -> Result<u128, String> {
+    let mut total = 0u128;
+
+    for deletions in 0..=distance.min(seed_len) {
+        if deletions > 0 && !ops.delete {
+            continue;
+        }
+
+        let remaining_after_deletes = seed_len - deletions;
+        for replacements in 0..=distance - deletions {
+            if replacements > remaining_after_deletes {
+                break;
+            }
+            if replacements > 0 && !ops.replace {
+                continue;
+            }
+
+            let insertions = distance - deletions - replacements;
+            if insertions > 0 && !ops.insert {
+                continue;
+            }
+
+            let delete_choices = binomial(seed_len, deletions)?;
+            let replacement_choices = binomial(remaining_after_deletes, replacements)?;
+            let insertion_choices = binomial(remaining_after_deletes + insertions, insertions)?;
+            let replacement_values = checked_pow_u128(alphabet_len.saturating_sub(1) as u128, replacements)?;
+            let insertion_values = checked_pow_u128(alphabet_len as u128, insertions)?;
+
+            let mut term = delete_choices;
+            term = term
+                .checked_mul(replacement_choices)
+                .ok_or_else(|| "candidate count overflowed u128".to_string())?;
+            term = term
+                .checked_mul(replacement_values)
+                .ok_or_else(|| "candidate count overflowed u128".to_string())?;
+            term = term
+                .checked_mul(insertion_choices)
+                .ok_or_else(|| "candidate count overflowed u128".to_string())?;
+            term = term
+                .checked_mul(insertion_values)
+                .ok_or_else(|| "candidate count overflowed u128".to_string())?;
+
+            total = total
+                .checked_add(term)
+                .ok_or_else(|| "candidate count overflowed u128".to_string())?;
+        }
+    }
+
+    Ok(total)
+}
+
+fn binomial(n: usize, k: usize) -> Result<u128, String> {
+    if k > n {
+        return Ok(0);
+    }
+    let k = k.min(n - k);
+    let mut row = vec![0u128; k + 1];
+    row[0] = 1;
+
+    for i in 1..=n {
+        let upper = i.min(k);
+        for j in (1..=upper).rev() {
+            row[j] = row[j]
+                .checked_add(row[j - 1])
+                .ok_or_else(|| format!("binomial coefficient overflow at C({n}, {k})"))?;
+        }
+    }
+
+    Ok(row[k])
+}
+
+fn checked_pow_u128(base: u128, exp: usize) -> Result<u128, String> {
+    let mut acc = 1u128;
+    for _ in 0..exp {
+        acc = acc
+            .checked_mul(base)
+            .ok_or_else(|| "candidate count overflowed u128".to_string())?;
+    }
+    Ok(acc)
+}

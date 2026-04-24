@@ -11,6 +11,7 @@ For the fuller project context and current implementation state, start with [`HA
 - The enumerator can produce and restore a `CandidateCheckpoint`, so a run can be paused and resumed without rechecking already processed candidates.
 - `SearchCheckpointFile` can serialize that state and the search configuration to disk for later resumption.
 - The CLI in `src/bin/enumerate.rs` now streams candidates instead of collecting the full result set first.
+- The CLI also supports `--count` to print a closed-form count for the simplified insert/delete/replace model without emitting candidates.
 
 ## What Is Still Missing
 
@@ -19,4 +20,4 @@ For the fuller project context and current implementation state, start with [`HA
 
 ## Status
 
-The lazy enumerator, in-memory resume support, and on-disk checkpoint serialization are implemented and tested. The next step is to wire the feeder into the worker loop and decide how checkpoint persistence should be scheduled during long runs.
+The lazy enumerator, in-memory resume support, on-disk checkpoint serialization, and closed-form simplified count mode are implemented and tested. The next step is to wire the feeder into the worker loop and decide how checkpoint persistence should be scheduled during long runs.

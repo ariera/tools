@@ -21,6 +21,7 @@ The feeder has already been refactored to support lazy iteration and in-memory c
 - `CandidateCheckpoint` captures enough state to resume an interrupted run without replaying already emitted candidates.
 - `SearchCheckpointFile` serializes the search configuration and checkpoint state to disk and restores it later.
 - The CLI now streams candidates instead of building a full `Vec<String>` first.
+- The CLI also supports `--count` for reporting a closed-form count of the simplified insert/delete/replace model without listing candidates.
 - The existing `enumerate_candidates(&SearchConfig)` API still exists as a compatibility wrapper that collects from the iterator.
 - The test suite passes after these changes.
 
@@ -31,7 +32,7 @@ The feeder has already been refactored to support lazy iteration and in-memory c
   - Contains `CandidateEnumerator`, `CandidateCheckpoint`, `SearchCheckpointFile`, and the compatibility wrapper.
 - [`src/bin/enumerate.rs`](/Users/mainar/dev/personal/b29/rust/src/bin/enumerate.rs)
   - CLI entry point.
-  - Currently streams output from the enumerator.
+  - Currently streams output from the enumerator and supports `--count`.
 - [`src/config.rs`](/Users/mainar/dev/personal/b29/rust/src/config.rs)
   - `SearchConfig` and `EnabledOperations`.
 - [`src/mutations.rs`](/Users/mainar/dev/personal/b29/rust/src/mutations.rs)
@@ -70,6 +71,7 @@ The next pieces are the ones that matter for the final feeder/worker integration
 2. Add parallel execution so multiple candidates can be evaluated at once.
 3. Stop the whole search immediately after the first success.
 4. Decide how frequently to persist checkpoints during a long run.
+5. Decide whether the count mode should stay simplified or grow into a model that matches the full enumerator, including swap and deduplication.
 
 ## Design Notes
 
@@ -89,6 +91,7 @@ From `/Users/mainar/dev/personal/b29/rust`:
 ```bash
 cargo test
 cargo run --bin enumerate -- --help
+cargo run --bin enumerate -- abc --count
 ```
 
 ## Implementation Constraint
