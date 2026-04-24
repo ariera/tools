@@ -1,7 +1,5 @@
 # Handoff: String Neighborhood Search
 
-This repository is a copied working tree of the Rust project from `/Users/mainar/dev/personal/research/string-permutation-kata/rust`.
-Do not modify the original research tree. All changes should happen in this copied project under `/Users/mainar/dev/personal/b29/rust`.
 
 ## Goal
 
@@ -21,6 +19,7 @@ The feeder has already been refactored to support lazy iteration and in-memory c
 
 - `CandidateEnumerator` lazily yields candidates one at a time.
 - `CandidateCheckpoint` captures enough state to resume an interrupted run without replaying already emitted candidates.
+- `SearchCheckpointFile` serializes the search configuration and checkpoint state to disk and restores it later.
 - The CLI now streams candidates instead of building a full `Vec<String>` first.
 - The existing `enumerate_candidates(&SearchConfig)` API still exists as a compatibility wrapper that collects from the iterator.
 - The test suite passes after these changes.
@@ -29,7 +28,7 @@ The feeder has already been refactored to support lazy iteration and in-memory c
 
 - [`src/search.rs`](/Users/mainar/dev/personal/b29/rust/src/search.rs)
   - Core search logic.
-  - Contains `CandidateEnumerator`, `CandidateCheckpoint`, and the compatibility wrapper.
+  - Contains `CandidateEnumerator`, `CandidateCheckpoint`, `SearchCheckpointFile`, and the compatibility wrapper.
 - [`src/bin/enumerate.rs`](/Users/mainar/dev/personal/b29/rust/src/bin/enumerate.rs)
   - CLI entry point.
   - Currently streams output from the enumerator.
@@ -59,17 +58,18 @@ The checkpoint currently captures:
 - the current layer contents,
 - the visited set.
 
-That is enough for in-memory resume, but it is not yet persisted to disk.
+That is enough for in-memory resume.
+
+`SearchCheckpointFile` now persists the same state together with the search configuration so a run can be restored from disk.
 
 ## What Is Still Missing
 
 The next pieces are the ones that matter for the final feeder/worker integration:
 
-1. Serialize checkpoints to disk.
-2. Reload the checkpoint on startup.
-3. Connect the enumerator to the worker function.
-4. Add parallel execution so multiple candidates can be evaluated at once.
-5. Stop the whole search immediately after the first success.
+1. Connect the enumerator to the worker function.
+2. Add parallel execution so multiple candidates can be evaluated at once.
+3. Stop the whole search immediately after the first success.
+4. Decide how frequently to persist checkpoints during a long run.
 
 ## Design Notes
 

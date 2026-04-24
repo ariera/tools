@@ -9,14 +9,14 @@ For the fuller project context and current implementation state, start with [`HA
 - The search code lives in `src/search.rs`.
 - Candidate generation is now lazy through `CandidateEnumerator`.
 - The enumerator can produce and restore a `CandidateCheckpoint`, so a run can be paused and resumed without rechecking already processed candidates.
+- `SearchCheckpointFile` can serialize that state and the search configuration to disk for later resumption.
 - The CLI in `src/bin/enumerate.rs` now streams candidates instead of collecting the full result set first.
 
 ## What Is Still Missing
 
-- Checkpoint persistence to disk.
 - A small runner that saves progress and resumes from the last checkpoint on startup.
 - Worker integration that consumes candidates until the first success.
 
 ## Status
 
-The lazy enumerator and in-memory resume support are implemented and tested. The next step is to serialize checkpoints and wire the feeder into the worker loop.
+The lazy enumerator, in-memory resume support, and on-disk checkpoint serialization are implemented and tested. The next step is to wire the feeder into the worker loop and decide how checkpoint persistence should be scheduled during long runs.

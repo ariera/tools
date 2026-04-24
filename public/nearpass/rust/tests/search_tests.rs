@@ -1,6 +1,19 @@
+use std::fs;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use string_neighborhood_kata::{
-    enumerate_candidates, CandidateEnumerator, EnabledOperations, KeyboardNeighbors, SearchConfig,
+    enumerate_candidates, CandidateEnumerator, EnabledOperations, KeyboardNeighbors,
+    SearchCheckpointFile, SearchConfig,
 };
+
+fn temp_checkpoint_path(prefix: &str) -> PathBuf {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    std::env::temp_dir().join(format!("{prefix}-{stamp}.json"))
+}
 
 #[test]
 fn returns_seed_when_distance_band_is_zero() {
@@ -232,4 +245,31 @@ fn resumes_from_checkpoint_without_repeating_emitted_candidates() {
     let tail: Vec<String> = resumed.collect();
 
     assert_eq!(tail, full[2..].to_vec());
+}
+
+#[test]
+fn serializes_checkpoint_to_disk_and_restores_it() {
+    let config = SearchConfig::new(
+        "ab",
+        vec!['a', 'b', 'c'],
+        1,
+        2,
+        KeyboardNeighbors::from_pairs(&[('a', &['b'])]),
+    )
+    .unwrap();
+
+    let full = enumerate_candidates(&config).unwrap();
+    let mut enumerator = CandidateEnumerator::new(&config);
+    assert_eq!(enumerator.next(), Some(full[0].clone()));
+
+    let checkpoint = SearchCheckpointFile::from_enumerator(&enumerator);
+    let path = temp_checkpoint_path("string-neighborhood-checkpoint");
+    checkpoint.save_to_path(&path).unwrap();
+
+    let loaded = SearchCheckpointFile::load_from_path(&path).unwrap();
+    let resumed = loaded.to_enumerator().unwrap();
+    let tail: Vec<String> = resumed.collect();
+
+    let _ = fs::remove_file(&path);
+    assert_eq!(tail, full[1..].to_vec());
 }

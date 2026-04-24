@@ -1,14 +1,39 @@
+use std::fs;
+use std::io::Write;
+use std::path::Path;
+
 use crate::config::SearchConfig;
+use crate::keyboard::{KeyboardNeighborSnapshot, KeyboardNeighbors};
 use crate::mutations::for_each_one_edit_neighbor;
 use rustc_hash::{FxHashMap, FxHashSet};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+const CHECKPOINT_FORMAT_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CandidateCheckpoint {
     pub finished: bool,
     pub current_distance: usize,
     pub output_index: usize,
     pub current_layer: Vec<(Vec<char>, u32)>,
     pub visited: Vec<Vec<char>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchConfigSnapshot {
+    pub seed: String,
+    pub alphabet: Vec<char>,
+    pub min_distance: usize,
+    pub max_distance: usize,
+    pub keyboard_neighbors: KeyboardNeighborSnapshot,
+    pub enabled_operations: crate::config::EnabledOperations,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchCheckpointFile {
+    pub format_version: u32,
+    pub config: SearchConfigSnapshot,
+    pub checkpoint: CandidateCheckpoint,
 }
 
 #[derive(Clone, Debug)]
@@ -117,6 +142,14 @@ impl CandidateEnumerator {
         }
     }
 
+    pub fn checkpoint_file(&self) -> SearchCheckpointFile {
+        SearchCheckpointFile {
+            format_version: CHECKPOINT_FORMAT_VERSION,
+            config: SearchConfigSnapshot::from_config(&self.config),
+            checkpoint: self.checkpoint(),
+        }
+    }
+
     fn build_next_layer(&self) -> Vec<(Vec<char>, u32)> {
         let mut next_layer_best: FxHashMap<Vec<char>, u32> = FxHashMap::with_capacity_and_hasher(
             self.current_layer.len() * 16,
@@ -197,6 +230,84 @@ impl Iterator for CandidateEnumerator {
                 return None;
             }
         }
+    }
+}
+
+impl SearchConfigSnapshot {
+    pub fn from_config(config: &SearchConfig) -> Self {
+        Self {
+            seed: config.seed.clone(),
+            alphabet: config.alphabet.iter().copied().collect(),
+            min_distance: config.min_distance,
+            max_distance: config.max_distance,
+            keyboard_neighbors: config.keyboard_neighbors.to_snapshot(),
+            enabled_operations: config.enabled_operations,
+        }
+    }
+
+    pub fn to_config(&self) -> Result<SearchConfig, String> {
+        let keyboard_neighbors = KeyboardNeighbors::from_snapshot(&self.keyboard_neighbors);
+        SearchConfig::new(
+            self.seed.clone(),
+            self.alphabet.clone(),
+            self.min_distance,
+            self.max_distance,
+            keyboard_neighbors,
+        )
+        .map(|config| config.with_enabled_operations(self.enabled_operations))
+    }
+}
+
+impl SearchCheckpointFile {
+    pub fn new(config: &SearchConfig, checkpoint: CandidateCheckpoint) -> Self {
+        Self {
+            format_version: CHECKPOINT_FORMAT_VERSION,
+            config: SearchConfigSnapshot::from_config(config),
+            checkpoint,
+        }
+    }
+
+    pub fn from_enumerator(enumerator: &CandidateEnumerator) -> Self {
+        enumerator.checkpoint_file()
+    }
+
+    pub fn to_enumerator(self) -> Result<CandidateEnumerator, String> {
+        if self.format_version != CHECKPOINT_FORMAT_VERSION {
+            return Err(format!(
+                "unsupported checkpoint format version {}",
+                self.format_version
+            ));
+        }
+        let config = self.config.to_config()?;
+        CandidateEnumerator::from_checkpoint(&config, self.checkpoint)
+    }
+
+    pub fn save_to_path(&self, path: impl AsRef<Path>) -> Result<(), String> {
+        let path = path.as_ref();
+        let data = serde_json::to_vec_pretty(self)
+            .map_err(|err| format!("failed to serialize checkpoint: {err}"))?;
+        let tmp_path = path.with_extension("tmp");
+
+        {
+            let mut file = fs::File::create(&tmp_path)
+                .map_err(|err| format!("failed to create checkpoint temp file: {err}"))?;
+            file.write_all(&data)
+                .map_err(|err| format!("failed to write checkpoint temp file: {err}"))?;
+            file.sync_all()
+                .map_err(|err| format!("failed to sync checkpoint temp file: {err}"))?;
+        }
+
+        fs::rename(&tmp_path, path)
+            .map_err(|err| format!("failed to move checkpoint into place: {err}"))?;
+        Ok(())
+    }
+
+    pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self, String> {
+        let path = path.as_ref();
+        let data = fs::read(path)
+            .map_err(|err| format!("failed to read checkpoint file {}: {err}", path.display()))?;
+        serde_json::from_slice(&data)
+            .map_err(|err| format!("failed to parse checkpoint file {}: {err}", path.display()))
     }
 }
 

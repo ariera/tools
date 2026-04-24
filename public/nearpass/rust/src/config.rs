@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use crate::keyboard::KeyboardNeighbors;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnabledOperations {
     pub insert: bool,
     pub delete: bool,
