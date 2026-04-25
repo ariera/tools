@@ -5,8 +5,9 @@ mod search;
 
 pub use config::{EnabledOperations, SearchConfig};
 pub use keyboard::{KeyboardNeighborSnapshot, KeyboardNeighbors};
-pub use mutations::{one_edit_neighbors, NeighborCandidate};
+pub use mutations::{NeighborCandidate, one_edit_neighbors};
 pub use search::{
-    count_candidates, enumerate_candidates, CandidateCheckpoint, CandidateEnumerator,
-    SearchCheckpointFile, SearchConfigSnapshot,
+    CandidateAdvance, CandidateCheckpoint, CandidateEnumerator, DiscoveryCandidateEnumerator,
+    LayerBuilderCheckpoint, SearchCheckpointFile, SearchConfigSnapshot, count_candidates,
+    enumerate_candidates,
 };

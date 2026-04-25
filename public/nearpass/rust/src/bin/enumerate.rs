@@ -3,7 +3,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, ValueEnum};
 use string_neighborhood_kata::{
-    count_candidates, CandidateEnumerator, KeyboardNeighbors, SearchConfig,
+    CandidateEnumerator, DiscoveryCandidateEnumerator, KeyboardNeighbors, SearchConfig,
+    count_candidates,
 };
 
 /// Enumerate strings in a bounded edit-distance neighborhood of a seed.
@@ -40,6 +41,10 @@ struct Cli {
     /// Print only the total number of combinations in the simplified insert/delete/replace model
     #[arg(long)]
     count: bool,
+
+    /// Emit candidates immediately in deterministic discovery order instead of sorting each layer
+    #[arg(long)]
+    discovery_order: bool,
 
     /// Suppress the trailing "N candidates" status line on stderr
     #[arg(long)]
@@ -126,7 +131,7 @@ fn write_candidates<I, W>(
     flush_each: bool,
 ) -> io::Result<usize>
 where
-    I: Iterator<Item = String>,
+    I: Iterator<Item = String> + ?Sized,
     W: Write,
 {
     let mut printed = 0usize;
@@ -167,6 +172,12 @@ mod tests {
     fn count_flag_parses() {
         let cli = Cli::try_parse_from(["enumerate", "abc", "--count"]).unwrap();
         assert!(cli.count);
+    }
+
+    #[test]
+    fn discovery_order_flag_parses() {
+        let cli = Cli::try_parse_from(["enumerate", "abc", "--discovery-order"]).unwrap();
+        assert!(cli.discovery_order);
     }
 
     #[derive(Default)]
@@ -254,7 +265,11 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let mut enumerator = CandidateEnumerator::new(&config);
+    let mut enumerator: Box<dyn Iterator<Item = String>> = if cli.discovery_order {
+        Box::new(DiscoveryCandidateEnumerator::new(&config))
+    } else {
+        Box::new(CandidateEnumerator::new(&config))
+    };
     let stdout = io::stdout();
     let printed = if stdout.is_terminal() {
         let mut out = stdout.lock();
