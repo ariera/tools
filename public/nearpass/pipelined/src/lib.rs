@@ -3,10 +3,12 @@ use std::collections::hash_map::Entry;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 mod worker;
 pub use worker::{CandidatePredicate, KeePassWorker, OpenError};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DistanceMode {
     /// A candidate may appear once per distance layer.
     /// Deduplication key is (depth, candidate).
@@ -17,7 +19,7 @@ pub enum DistanceMode {
     GlobalMinimumDistance,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EditOps {
     pub delete: bool,
     pub insert: bool,
@@ -51,7 +53,7 @@ impl EditOps {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchConfig {
     pub seed: String,
     pub alphabet: Vec<char>,
@@ -86,15 +88,17 @@ impl fmt::Display for ConfigError {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Candidate {
+    /// Zero-based sequential index in the enumerator's emission order.
+    pub ordinal: u64,
     pub text: String,
     pub chars: Vec<char>,
     pub distance: usize,
     pub cost: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct QueueItem {
     depth: usize,
     cost: u32,
@@ -119,7 +123,7 @@ impl PartialOrd for QueueItem {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct EnumeratorStats {
     pub popped: u64,
     pub stale_skipped: u64,
@@ -132,6 +136,113 @@ pub struct EnumeratorStats {
     pub relaxed_not_better: u64,
     pub emitted: u64,
 }
+
+// ---------------------------------------------------------------------------
+// Config hashing
+// ---------------------------------------------------------------------------
+
+/// Deterministic representation of SearchConfig for hashing.
+///
+/// HashMap and HashSet have non-stable iteration order, so the config must be
+/// canonicalized (sorted, deduped) before serialization.
+#[derive(Serialize)]
+struct CanonicalSearchConfig<'a> {
+    seed: &'a str,
+    alphabet: Vec<char>,
+    min_distance: usize,
+    max_distance: usize,
+    ops: EditOps,
+    keyboard_neighbors: Vec<(char, Vec<char>)>,
+    distance_mode: DistanceMode,
+}
+
+fn canonical_config(config: &SearchConfig) -> CanonicalSearchConfig<'_> {
+    let mut alphabet = config.alphabet.clone();
+    alphabet.sort_unstable();
+    alphabet.dedup();
+
+    let mut keyboard_neighbors: Vec<(char, Vec<char>)> = config
+        .keyboard_neighbors
+        .iter()
+        .map(|(&from, tos)| {
+            let mut tos: Vec<char> = tos.iter().copied().collect();
+            tos.sort_unstable();
+            tos.dedup();
+            (from, tos)
+        })
+        .collect();
+    keyboard_neighbors.sort_by_key(|(from, _)| *from);
+
+    CanonicalSearchConfig {
+        seed: &config.seed,
+        alphabet,
+        min_distance: config.min_distance,
+        max_distance: config.max_distance,
+        ops: config.ops,
+        keyboard_neighbors,
+        distance_mode: config.distance_mode,
+    }
+}
+
+/// Return a stable hex string that uniquely identifies a search configuration.
+///
+/// The hash is stable across runs for the same logical config regardless of
+/// alphabet order or keyboard-neighbor map iteration order.
+pub fn config_hash(config: &SearchConfig) -> String {
+    let canonical = canonical_config(config);
+    let bytes =
+        serde_json::to_vec(&canonical).expect("canonical SearchConfig is always serializable");
+    blake3::hash(&bytes).to_hex().to_string()
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot / restore
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SnapshotError {
+    UnsupportedVersion { got: u32 },
+    ConfigHashMismatch { expected: String, got: String },
+    InvalidBestDepthCount { expected: usize, got: usize },
+}
+
+impl fmt::Display for SnapshotError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedVersion { got } => {
+                write!(f, "unsupported snapshot version {got}; expected 1")
+            }
+            Self::ConfigHashMismatch { expected, got } => {
+                write!(f, "config hash mismatch: snapshot has {got}, current config hashes to {expected}")
+            }
+            Self::InvalidBestDepthCount { expected, got } => {
+                write!(
+                    f,
+                    "snapshot best-cost map has {got} depth entries; expected {expected} for max_distance"
+                )
+            }
+        }
+    }
+}
+
+/// A serializable snapshot of the full enumerator frontier.
+///
+/// Pass to `PipelinedOrderedCandidateEnumerator::from_snapshot` to resume
+/// enumeration exactly where it left off.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EnumeratorSnapshot {
+    schema_version: u32,
+    config_hash: String,
+    heap: Vec<QueueItem>,
+    /// best[depth] is a list of (chars, cost) pairs.
+    best: Vec<Vec<(Vec<char>, u32)>>,
+    finalized_global: Vec<Vec<char>>,
+    stats: EnumeratorStats,
+}
+
+// ---------------------------------------------------------------------------
+// Enumerator
+// ---------------------------------------------------------------------------
 
 pub struct PipelinedOrderedCandidateEnumerator {
     config: SearchConfig,
@@ -183,6 +294,72 @@ impl PipelinedOrderedCandidateEnumerator {
         })
     }
 
+    /// Restore from a snapshot. Returns an error if the snapshot is incompatible
+    /// with the given config (wrong version or hash mismatch).
+    pub fn from_snapshot(
+        mut config: SearchConfig,
+        snapshot: EnumeratorSnapshot,
+    ) -> Result<Self, SnapshotError> {
+        if snapshot.schema_version != 1 {
+            return Err(SnapshotError::UnsupportedVersion { got: snapshot.schema_version });
+        }
+
+        config.alphabet.sort_unstable();
+        config.alphabet.dedup();
+
+        let expected_hash = config_hash(&config);
+        if snapshot.config_hash != expected_hash {
+            return Err(SnapshotError::ConfigHashMismatch {
+                expected: expected_hash,
+                got: snapshot.config_hash,
+            });
+        }
+
+        let expected_best_len = config.max_distance + 1;
+        if snapshot.best.len() != expected_best_len {
+            return Err(SnapshotError::InvalidBestDepthCount {
+                expected: expected_best_len,
+                got: snapshot.best.len(),
+            });
+        }
+
+        let best = snapshot
+            .best
+            .into_iter()
+            .map(|entries| entries.into_iter().collect())
+            .collect();
+
+        Ok(Self {
+            config,
+            heap: BinaryHeap::from(snapshot.heap),
+            best,
+            finalized_global: snapshot.finalized_global.into_iter().collect(),
+            stats: snapshot.stats,
+        })
+    }
+
+    /// Capture the full enumerator frontier for later restoration.
+    pub fn snapshot(&self) -> EnumeratorSnapshot {
+        EnumeratorSnapshot {
+            schema_version: 1,
+            config_hash: config_hash(&self.config),
+            heap: self.heap.clone().into_vec(),
+            best: self.best
+                .iter()
+                .map(|m| m.iter().map(|(k, v)| (k.clone(), *v)).collect())
+                .collect(),
+            finalized_global: self.finalized_global.iter().cloned().collect(),
+            stats: self.stats.clone(),
+        }
+    }
+
+    /// The ordinal that the next emitted candidate will carry.
+    ///
+    /// Equals the number of candidates emitted so far.
+    pub fn next_ordinal(&self) -> u64 {
+        self.stats.emitted
+    }
+
     pub fn stats(&self) -> &EnumeratorStats {
         &self.stats
     }
@@ -194,9 +371,15 @@ impl PipelinedOrderedCandidateEnumerator {
             .is_some_and(|neighbors| neighbors.contains(&to))
     }
 
-    fn record_local_neighbor(local: &mut HashMap<Vec<char>, u32>, child: Vec<char>, delta_cost: u32) {
+    fn record_local_neighbor(
+        local: &mut HashMap<Vec<char>, u32>,
+        child: Vec<char>,
+        delta_cost: u32,
+    ) {
         match local.entry(child) {
-            Entry::Vacant(v) => { v.insert(delta_cost); }
+            Entry::Vacant(v) => {
+                v.insert(delta_cost);
+            }
             Entry::Occupied(mut o) => {
                 if delta_cost < *o.get() {
                     *o.get_mut() = delta_cost;
@@ -205,7 +388,8 @@ impl PipelinedOrderedCandidateEnumerator {
         }
     }
 
-    /// Generate all unique one-edit neighbors of `parent`, returning cheapest single-edit cost per child.
+    /// Generate all unique one-edit neighbors of `parent`, returning cheapest
+    /// single-edit cost per child.
     fn one_edit_neighbors(&mut self, parent: &[char]) -> HashMap<Vec<char>, u32> {
         let mut local: HashMap<Vec<char>, u32> = HashMap::new();
         let len = parent.len();
@@ -242,7 +426,8 @@ impl PipelinedOrderedCandidateEnumerator {
                     }
                     let mut child = parent.to_vec();
                     child[i] = replacement;
-                    let delta_cost = if self.is_keyboard_neighbor(original, replacement) { 1 } else { 3 };
+                    let delta_cost =
+                        if self.is_keyboard_neighbor(original, replacement) { 1 } else { 3 };
                     self.stats.raw_neighbors_generated += 1;
                     Self::record_local_neighbor(&mut local, child, delta_cost);
                 }
@@ -339,8 +524,10 @@ impl Iterator for PipelinedOrderedCandidateEnumerator {
             }
 
             if item.depth >= self.config.min_distance {
+                let ordinal = self.stats.emitted;
                 self.stats.emitted += 1;
                 return Some(Candidate {
+                    ordinal,
                     text: Self::chars_to_string(&item.chars),
                     chars: item.chars,
                     distance: item.depth,
@@ -411,7 +598,8 @@ mod tests {
 
     #[test]
     fn exact_distance_one_matches_brief_example() {
-        let cfg = config("a", vec!['a', 'b'], 1, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        let cfg =
+            config("a", vec!['a', 'b'], 1, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
         let got = collect_triples(cfg);
         let expected = vec![
             ("".to_string(), 1, 2),
@@ -425,7 +613,8 @@ mod tests {
 
     #[test]
     fn swap_cost_sorts_before_delete_insert_replace() {
-        let cfg = config("ab", vec!['a', 'b'], 1, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        let cfg =
+            config("ab", vec!['a', 'b'], 1, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
         let got = collect_triples(cfg);
         let expected = vec![
             ("ba".to_string(), 1, 1),
@@ -445,14 +634,28 @@ mod tests {
 
     #[test]
     fn duplicate_deletes_are_deduplicated_within_layer() {
-        let cfg = config("aa", vec![], 1, 1, EditOps::delete_only(), DistanceMode::PerDistanceBestCost);
+        let cfg = config(
+            "aa",
+            vec![],
+            1,
+            1,
+            EditOps::delete_only(),
+            DistanceMode::PerDistanceBestCost,
+        );
         let got = collect_triples(cfg);
         assert_eq!(got, vec![("a".to_string(), 1, 2)]);
     }
 
     #[test]
     fn duplicate_insertions_are_deduplicated_within_layer() {
-        let cfg = config("a", vec!['a'], 1, 1, EditOps::insert_only(), DistanceMode::PerDistanceBestCost);
+        let cfg = config(
+            "a",
+            vec!['a'],
+            1,
+            1,
+            EditOps::insert_only(),
+            DistanceMode::PerDistanceBestCost,
+        );
         let got = collect_triples(cfg);
         assert_eq!(got, vec![("aa".to_string(), 1, 2)]);
     }
@@ -461,14 +664,22 @@ mod tests {
 
     #[test]
     fn identical_adjacent_swap_is_not_emitted() {
-        let cfg = config("aa", vec!['a'], 1, 1, EditOps::swap_only(), DistanceMode::PerDistanceBestCost);
+        let cfg =
+            config("aa", vec!['a'], 1, 1, EditOps::swap_only(), DistanceMode::PerDistanceBestCost);
         let got = collect_triples(cfg);
         assert!(got.is_empty());
     }
 
     #[test]
     fn replacement_to_same_char_is_not_an_edit() {
-        let cfg = config("a", vec!['a'], 1, 1, EditOps::replace_only(), DistanceMode::PerDistanceBestCost);
+        let cfg = config(
+            "a",
+            vec!['a'],
+            1,
+            1,
+            EditOps::replace_only(),
+            DistanceMode::PerDistanceBestCost,
+        );
         let got = collect_triples(cfg);
         assert!(got.is_empty());
     }
@@ -496,21 +707,20 @@ mod tests {
 
     #[test]
     fn min_distance_zero_emits_seed() {
-        let cfg = config("é", vec![], 0, 0, EditOps::none(), DistanceMode::PerDistanceBestCost);
+        let cfg =
+            config("é", vec![], 0, 0, EditOps::none(), DistanceMode::PerDistanceBestCost);
         let got = collect_triples(cfg);
         assert_eq!(got, vec![("é".to_string(), 0, 0)]);
     }
 
     #[test]
     fn unicode_delete_uses_char_boundaries_not_bytes() {
-        let cfg = config("éa", vec![], 1, 1, EditOps::delete_only(), DistanceMode::PerDistanceBestCost);
+        let cfg =
+            config("éa", vec![], 1, 1, EditOps::delete_only(), DistanceMode::PerDistanceBestCost);
         let got = collect_triples(cfg);
         assert_eq!(
             got,
-            vec![
-                ("a".to_string(), 1, 2),
-                ("é".to_string(), 1, 2),
-            ]
+            vec![("a".to_string(), 1, 2), ("é".to_string(), 1, 2),]
         );
     }
 
@@ -518,7 +728,14 @@ mod tests {
 
     #[test]
     fn unsorted_duplicate_alphabet_is_normalized() {
-        let cfg = config("a", vec!['b', 'a', 'b'], 1, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        let cfg = config(
+            "a",
+            vec!['b', 'a', 'b'],
+            1,
+            1,
+            EditOps::all(),
+            DistanceMode::PerDistanceBestCost,
+        );
         let got = collect_triples(cfg);
         let expected = vec![
             ("".to_string(), 1, 2),
@@ -534,7 +751,14 @@ mod tests {
 
     #[test]
     fn per_distance_mode_allows_reappearance_at_later_depth() {
-        let cfg = config("a", vec!['a', 'b'], 0, 2, EditOps::replace_only(), DistanceMode::PerDistanceBestCost);
+        let cfg = config(
+            "a",
+            vec!['a', 'b'],
+            0,
+            2,
+            EditOps::replace_only(),
+            DistanceMode::PerDistanceBestCost,
+        );
         let got = collect_triples(cfg);
         assert_eq!(
             got,
@@ -548,20 +772,31 @@ mod tests {
 
     #[test]
     fn global_minimum_distance_suppresses_later_reappearance() {
-        let cfg = config("a", vec!['a', 'b'], 0, 2, EditOps::replace_only(), DistanceMode::GlobalMinimumDistance);
+        let cfg = config(
+            "a",
+            vec!['a', 'b'],
+            0,
+            2,
+            EditOps::replace_only(),
+            DistanceMode::GlobalMinimumDistance,
+        );
         let got = collect_triples(cfg);
         assert_eq!(
             got,
-            vec![
-                ("a".to_string(), 0, 0),
-                ("b".to_string(), 1, 3),
-            ]
+            vec![("a".to_string(), 0, 0), ("b".to_string(), 1, 3),]
         );
     }
 
     #[test]
     fn global_mode_marks_seed_seen_even_when_below_min_distance() {
-        let cfg = config("a", vec!['a', 'b'], 1, 2, EditOps::replace_only(), DistanceMode::GlobalMinimumDistance);
+        let cfg = config(
+            "a",
+            vec!['a', 'b'],
+            1,
+            2,
+            EditOps::replace_only(),
+            DistanceMode::GlobalMinimumDistance,
+        );
         let got = collect_triples(cfg);
         assert_eq!(got, vec![("b".to_string(), 1, 3)]);
     }
@@ -570,7 +805,8 @@ mod tests {
 
     #[test]
     fn empty_seed_insert_only() {
-        let cfg = config("", vec!['b', 'a'], 0, 1, EditOps::insert_only(), DistanceMode::PerDistanceBestCost);
+        let cfg =
+            config("", vec!['b', 'a'], 0, 1, EditOps::insert_only(), DistanceMode::PerDistanceBestCost);
         let got = collect_triples(cfg);
         assert_eq!(
             got,
@@ -605,7 +841,8 @@ mod tests {
 
     #[test]
     fn max_distance_zero_emits_only_seed() {
-        let cfg = config("hello", vec!['a', 'b'], 0, 0, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        let cfg =
+            config("hello", vec!['a', 'b'], 0, 0, EditOps::all(), DistanceMode::PerDistanceBestCost);
         let got = collect_triples(cfg);
         assert_eq!(got, vec![("hello".to_string(), 0, 0)]);
     }
@@ -617,12 +854,170 @@ mod tests {
         assert!(matches!(result, Err(ConfigError::InvalidDistanceBand { min: 3, max: 1 })));
     }
 
+    // --- Ordinals ---
+
+    #[test]
+    fn ordinals_are_sequential_from_zero() {
+        let cfg =
+            config("a", vec!['a', 'b'], 1, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        let ordinals: Vec<u64> = PipelinedOrderedCandidateEnumerator::new(cfg)
+            .unwrap()
+            .map(|c| c.ordinal)
+            .collect();
+        let expected: Vec<u64> = (0..ordinals.len() as u64).collect();
+        assert_eq!(ordinals, expected);
+    }
+
+    #[test]
+    fn next_ordinal_equals_emitted_count() {
+        let cfg =
+            config("a", vec!['a', 'b'], 1, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        let mut enumerator = PipelinedOrderedCandidateEnumerator::new(cfg).unwrap();
+        assert_eq!(enumerator.next_ordinal(), 0);
+        enumerator.next();
+        assert_eq!(enumerator.next_ordinal(), 1);
+        enumerator.next();
+        assert_eq!(enumerator.next_ordinal(), 2);
+    }
+
+    // --- Config hash ---
+
+    #[test]
+    fn config_hash_is_deterministic() {
+        let cfg =
+            config("a", vec!['a', 'b'], 0, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        assert_eq!(config_hash(&cfg), config_hash(&cfg));
+    }
+
+    #[test]
+    fn config_hash_differs_for_different_seeds() {
+        let cfg_a =
+            config("a", vec!['a', 'b'], 0, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        let cfg_b =
+            config("b", vec!['a', 'b'], 0, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        assert_ne!(config_hash(&cfg_a), config_hash(&cfg_b));
+    }
+
+    #[test]
+    fn config_hash_normalizes_alphabet_order() {
+        let cfg_a =
+            config("a", vec!['a', 'b'], 0, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        let cfg_b =
+            config("a", vec!['b', 'a'], 0, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        assert_eq!(config_hash(&cfg_a), config_hash(&cfg_b));
+    }
+
+    // --- Snapshot / restore ---
+
+    #[test]
+    fn snapshot_restore_produces_same_full_output() {
+        let base_cfg =
+            config("a", vec!['a', 'b'], 0, 2, EditOps::all(), DistanceMode::PerDistanceBestCost);
+
+        // Full enumeration from scratch.
+        let full: Vec<Candidate> =
+            PipelinedOrderedCandidateEnumerator::new(base_cfg.clone()).unwrap().collect();
+
+        // Partial run, then snapshot, then restore and complete.
+        let split_at = full.len() / 2;
+        let mut enumerator =
+            PipelinedOrderedCandidateEnumerator::new(base_cfg.clone()).unwrap();
+        let first_half: Vec<Candidate> = enumerator.by_ref().take(split_at).collect();
+
+        let snapshot = enumerator.snapshot();
+        let restored =
+            PipelinedOrderedCandidateEnumerator::from_snapshot(base_cfg, snapshot).unwrap();
+        let second_half: Vec<Candidate> = restored.collect();
+
+        let combined: Vec<Candidate> = first_half.into_iter().chain(second_half).collect();
+        assert_eq!(combined, full);
+    }
+
+    #[test]
+    fn snapshot_at_start_produces_same_full_output() {
+        let base_cfg =
+            config("ab", vec!['a', 'b'], 1, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
+
+        let full: Vec<Candidate> =
+            PipelinedOrderedCandidateEnumerator::new(base_cfg.clone()).unwrap().collect();
+
+        // Snapshot before emitting anything.
+        let enumerator = PipelinedOrderedCandidateEnumerator::new(base_cfg.clone()).unwrap();
+        let snapshot = enumerator.snapshot();
+        let restored =
+            PipelinedOrderedCandidateEnumerator::from_snapshot(base_cfg, snapshot).unwrap();
+        let from_snapshot: Vec<Candidate> = restored.collect();
+
+        assert_eq!(from_snapshot, full);
+    }
+
+    #[test]
+    fn snapshot_rejects_mismatched_config_hash() {
+        let cfg_a =
+            config("a", vec!['a', 'b'], 0, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        let cfg_b =
+            config("b", vec!['a', 'b'], 0, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
+
+        let enumerator = PipelinedOrderedCandidateEnumerator::new(cfg_a).unwrap();
+        let snapshot = enumerator.snapshot();
+
+        let result = PipelinedOrderedCandidateEnumerator::from_snapshot(cfg_b, snapshot);
+        assert!(matches!(result, Err(SnapshotError::ConfigHashMismatch { .. })));
+    }
+
+    #[test]
+    fn snapshot_rejects_unsupported_version() {
+        let cfg =
+            config("a", vec!['a'], 0, 1, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        let enumerator = PipelinedOrderedCandidateEnumerator::new(cfg.clone()).unwrap();
+        let snapshot = enumerator.snapshot();
+
+        // Round-trip through JSON, modify schema_version.
+        let mut json: serde_json::Value = serde_json::to_value(&snapshot).unwrap();
+        json["schema_version"] = serde_json::json!(99u32);
+        let modified: EnumeratorSnapshot = serde_json::from_value(json).unwrap();
+
+        let result = PipelinedOrderedCandidateEnumerator::from_snapshot(cfg, modified);
+        assert!(matches!(result, Err(SnapshotError::UnsupportedVersion { got: 99 })));
+    }
+
+    #[test]
+    fn snapshot_roundtrips_through_json() {
+        let base_cfg =
+            config("ab", vec!['a', 'b'], 1, 2, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        let mut enumerator =
+            PipelinedOrderedCandidateEnumerator::new(base_cfg.clone()).unwrap();
+
+        // Advance partway.
+        for _ in 0..5 {
+            enumerator.next();
+        }
+        let remaining_direct: Vec<Candidate> = enumerator.by_ref().collect();
+
+        // Same point via snapshot → JSON → deserialize → restore.
+        let mut enumerator2 =
+            PipelinedOrderedCandidateEnumerator::new(base_cfg.clone()).unwrap();
+        for _ in 0..5 {
+            enumerator2.next();
+        }
+        let snapshot = enumerator2.snapshot();
+        let json = serde_json::to_string(&snapshot).unwrap();
+        let snapshot2: EnumeratorSnapshot = serde_json::from_str(&json).unwrap();
+        let remaining_via_json: Vec<Candidate> =
+            PipelinedOrderedCandidateEnumerator::from_snapshot(base_cfg, snapshot2)
+                .unwrap()
+                .collect();
+
+        assert_eq!(remaining_direct, remaining_via_json);
+    }
+
     // --- Invariant checks over multiple configs ---
 
     struct InvariantChecker {
         seen: HashSet<(usize, Vec<char>)>,
         seen_global: HashSet<Vec<char>>,
         last_key: Option<(usize, u32, Vec<char>)>,
+        next_expected_ordinal: u64,
         min_distance: usize,
         max_distance: usize,
         mode: DistanceMode,
@@ -634,6 +1029,7 @@ mod tests {
                 seen: HashSet::new(),
                 seen_global: HashSet::new(),
                 last_key: None,
+                next_expected_ordinal: 0,
                 min_distance,
                 max_distance,
                 mode,
@@ -642,20 +1038,34 @@ mod tests {
 
         fn check(&mut self, c: &Candidate) {
             // Distance is within band.
-            assert!(c.distance >= self.min_distance, "distance {} < min {}", c.distance, self.min_distance);
-            assert!(c.distance <= self.max_distance, "distance {} > max {}", c.distance, self.max_distance);
+            assert!(
+                c.distance >= self.min_distance,
+                "distance {} < min {}",
+                c.distance,
+                self.min_distance
+            );
+            assert!(
+                c.distance <= self.max_distance,
+                "distance {} > max {}",
+                c.distance,
+                self.max_distance
+            );
 
             // Sorted order is correct.
             let key = (c.distance, c.cost, c.chars.clone());
             if let Some(ref prev) = self.last_key {
-                assert!(
-                    *prev <= key,
-                    "out of order: prev={:?} curr={:?}",
-                    prev,
-                    key
-                );
+                assert!(*prev <= key, "out of order: prev={:?} curr={:?}", prev, key);
             }
             self.last_key = Some(key);
+
+            // Ordinal is sequential.
+            assert_eq!(
+                c.ordinal,
+                self.next_expected_ordinal,
+                "ordinal gap at {:?}",
+                c.text
+            );
+            self.next_expected_ordinal += 1;
 
             // No duplicates within the same distance.
             let per_depth_key = (c.distance, c.chars.clone());
@@ -675,8 +1085,7 @@ mod tests {
                 );
             }
 
-            // Valid UTF-8.
-            assert!(!c.text.is_empty() || c.chars.is_empty());
+            // text == chars round-trip.
             let rebuilt: String = c.chars.iter().collect();
             assert_eq!(rebuilt, c.text, "text/chars mismatch");
         }
@@ -696,12 +1105,7 @@ mod tests {
     #[test]
     fn invariants_hold_for_matrix_of_small_configs() {
         let seeds = ["", "a", "b", "aa", "ab", "aba"];
-        let alphabets: &[&[char]] = &[
-            &[],
-            &['a'],
-            &['a', 'b'],
-            &['b', 'a', 'b'],
-        ];
+        let alphabets: &[&[char]] = &[&[], &['a'], &['a', 'b'], &['b', 'a', 'b']];
         let bands = [(0, 0), (0, 1), (1, 1), (0, 2), (1, 2)];
         let ops_set = [
             EditOps::none(),
@@ -740,7 +1144,8 @@ mod tests {
 
     #[test]
     fn stats_are_consistent() {
-        let cfg = config("ab", vec!['a', 'b'], 0, 2, EditOps::all(), DistanceMode::PerDistanceBestCost);
+        let cfg =
+            config("ab", vec!['a', 'b'], 0, 2, EditOps::all(), DistanceMode::PerDistanceBestCost);
         let mut enumerator = PipelinedOrderedCandidateEnumerator::new(cfg).unwrap();
         let results: Vec<_> = enumerator.by_ref().collect();
         let stats = enumerator.stats();
@@ -749,7 +1154,9 @@ mod tests {
         assert!(stats.popped >= stats.emitted);
         assert!(stats.popped >= stats.stale_skipped + stats.emitted);
         assert!(stats.raw_neighbors_generated >= stats.local_unique_neighbors);
-        assert_eq!(stats.relaxed_new + stats.relaxed_improved + stats.relaxed_not_better,
-                   stats.local_unique_neighbors);
+        assert_eq!(
+            stats.relaxed_new + stats.relaxed_improved + stats.relaxed_not_better,
+            stats.local_unique_neighbors
+        );
     }
 }
