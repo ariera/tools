@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use keepass::error::{DatabaseKeyError, DatabaseOpenError, DatabaseVersionParseError};
 use keepass::{Database, DatabaseKey};
@@ -87,4 +87,31 @@ pub fn open_database(path: &Path, password: &str) -> Result<(), OpenError> {
 /// This is the pure predicate used by the worker.
 pub fn can_open_database(path: &Path, password: &str) -> bool {
     open_database(path, password).is_ok()
+}
+
+/// A worker that tests passwords by attempting to open a KeePass database.
+///
+/// The database path is fixed at construction and never changes.
+/// Multiple worker threads can safely share a KeePassWorker via Arc<KeePassWorker>.
+#[derive(Clone)]
+pub struct KeePassWorker {
+    db_path: PathBuf,
+}
+
+impl KeePassWorker {
+    /// Create a new worker for the given database path.
+    pub fn new(db_path: PathBuf) -> Self {
+        Self { db_path }
+    }
+
+    /// Get the database path (for testing/debugging).
+    pub fn db_path(&self) -> &Path {
+        &self.db_path
+    }
+}
+
+impl CandidatePredicate for KeePassWorker {
+    fn test(&self, candidate: &str) -> bool {
+        can_open_database(&self.db_path, candidate)
+    }
 }

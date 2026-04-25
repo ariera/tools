@@ -4,7 +4,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::fmt;
 
 mod worker;
-pub use worker::CandidatePredicate;
+pub use worker::{CandidatePredicate, KeePassWorker};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DistanceMode {
