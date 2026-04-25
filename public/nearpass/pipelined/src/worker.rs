@@ -1,3 +1,33 @@
+//! KeePass database worker adapter.
+//!
+//! This module provides a worker implementation that tests passwords by attempting
+//! to open a KeePass database. It is designed to be used with a parallel search
+//! orchestrator that generates candidate passwords and tests them in parallel.
+//!
+//! # Example
+//!
+//! ```ignore
+//! use pipelined::{CandidatePredicate, KeePassWorker};
+//! use std::path::PathBuf;
+//! use std::sync::Arc;
+//!
+//! let worker = Arc::new(KeePassWorker::new(PathBuf::from("database.kdbx")));
+//! let result = worker.test("password");
+//! assert!(!result); // password is wrong
+//! ```
+//!
+//! # Thread Safety
+//!
+//! `KeePassWorker` is `Send + Sync` and can be safely shared across multiple
+//! threads via `Arc<KeePassWorker>`. The orchestrator passes the worker to
+//! parallel worker threads, which call `test()` concurrently.
+//!
+//! # Purity
+//!
+//! The `test()` method is pure: the same password always produces the same result.
+//! This ensures that retesting after a resume (due to checkpoint recovery) is safe
+//! and will produce identical results.
+
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -92,7 +122,7 @@ pub fn can_open_database(path: &Path, password: &str) -> bool {
 /// A worker that tests passwords by attempting to open a KeePass database.
 ///
 /// The database path is fixed at construction and never changes.
-/// Multiple worker threads can safely share a KeePassWorker via Arc<KeePassWorker>.
+/// Multiple worker threads can safely share a KeePassWorker via `Arc<KeePassWorker>`.
 #[derive(Clone)]
 pub struct KeePassWorker {
     db_path: PathBuf,
