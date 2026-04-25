@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 mod worker;
 pub use worker::{CandidatePredicate, KeePassWorker, OpenError};
 
+pub mod engine;
+pub use engine::{run, EngineConfig, RunError, SearchReport, StopReason, SuccessSemantics};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DistanceMode {
     /// A candidate may appear once per distance layer.
