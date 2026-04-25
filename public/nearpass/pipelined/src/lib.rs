@@ -3,6 +3,9 @@ use std::collections::hash_map::Entry;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::fmt;
 
+mod worker;
+pub use worker::CandidatePredicate;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DistanceMode {
     /// A candidate may appear once per distance layer.
