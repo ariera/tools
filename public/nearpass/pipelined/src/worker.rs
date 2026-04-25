@@ -1,4 +1,9 @@
+use std::fs::File;
+use std::io::BufReader;
+use std::path::Path;
+
 use keepass::error::{DatabaseKeyError, DatabaseOpenError, DatabaseVersionParseError};
+use keepass::{Database, DatabaseKey};
 
 /// Errors that can occur when opening a KeePass database.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,4 +65,26 @@ where
     fn test(&self, candidate: &str) -> bool {
         self(candidate)
     }
+}
+
+/// Attempt to open a KeePass database with the given password.
+///
+/// Returns Ok(()) if the database opens successfully with this password,
+/// or an error describing why it failed.
+pub fn open_database(path: &Path, password: &str) -> Result<(), OpenError> {
+    let file = File::open(path).map_err(|error| OpenError::Io(error.kind()))?;
+    let mut reader = BufReader::new(file);
+    let key = DatabaseKey::new().with_password(password);
+
+    Database::get_xml(&mut reader, key)
+        .map(|_| ())
+        .map_err(OpenError::from_keepass_error)
+}
+
+/// Test whether a password opens the database at the given path.
+///
+/// Returns true if the database opens, false otherwise (including on any error).
+/// This is the pure predicate used by the worker.
+pub fn can_open_database(path: &Path, password: &str) -> bool {
+    open_database(path, password).is_ok()
 }
