@@ -20,7 +20,7 @@ The feeder has already been refactored to support lazy iteration and in-memory c
 - `CandidateEnumerator` lazily yields candidates one at a time.
 - `CandidateCheckpoint` captures enough state to resume an interrupted run without replaying already emitted candidates.
 - `SearchCheckpointFile` serializes the search configuration and checkpoint state to disk and restores it later.
-- The CLI now streams candidates instead of building a full `Vec<String>` first.
+- The CLI now streams candidates instead of building a full `Vec<String>` first, and flushes each candidate when stdout is a terminal.
 - The CLI also supports `--count` for reporting a closed-form count of the simplified insert/delete/replace model without listing candidates.
 - The existing `enumerate_candidates(&SearchConfig)` API still exists as a compatibility wrapper that collects from the iterator.
 - The test suite passes after these changes.
@@ -50,6 +50,7 @@ The feeder has already been refactored to support lazy iteration and in-memory c
 - It tracks a `visited` set so candidates are not repeated.
 - For each distance layer, it generates one-edit neighbors, deduplicates them, sorts them by likelihood, and emits them in deterministic order.
 - It keeps the current layer and output index so the iteration can pause and resume within a layer.
+- It is not fully incremental inside a distance layer. A large layer must be built and sorted before the first candidate in that layer can be emitted.
 
 The checkpoint currently captures:
 
@@ -72,6 +73,7 @@ The next pieces are the ones that matter for the final feeder/worker integration
 3. Stop the whole search immediately after the first success.
 4. Decide how frequently to persist checkpoints during a long run.
 5. Decide whether the count mode should stay simplified or grow into a model that matches the full enumerator, including swap and deduplication.
+6. Decide whether to redesign layer generation if checkpoints need progress inside a layer build.
 
 ## Design Notes
 

@@ -1,4 +1,4 @@
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufWriter, IsTerminal, Write};
 use std::process::ExitCode;
 
 use clap::{Parser, ValueEnum};
@@ -119,8 +119,35 @@ fn qwerty_neighbors() -> KeyboardNeighbors {
     ])
 }
 
+fn write_candidates<I, W>(
+    candidates: &mut I,
+    limit: usize,
+    out: &mut W,
+    flush_each: bool,
+) -> io::Result<usize>
+where
+    I: Iterator<Item = String>,
+    W: Write,
+{
+    let mut printed = 0usize;
+    while limit == 0 || printed < limit {
+        let Some(candidate) = candidates.next() else {
+            break;
+        };
+        writeln!(out, "{candidate}")?;
+        printed += 1;
+        if flush_each {
+            out.flush()?;
+        }
+    }
+    out.flush()?;
+    Ok(printed)
+}
+
 #[cfg(test)]
 mod tests {
+    use std::io::{self, Write};
+
     use clap::Parser;
 
     use super::{AlphabetPreset, Cli};
@@ -140,6 +167,56 @@ mod tests {
     fn count_flag_parses() {
         let cli = Cli::try_parse_from(["enumerate", "abc", "--count"]).unwrap();
         assert!(cli.count);
+    }
+
+    #[derive(Default)]
+    struct RecordingWriter {
+        bytes: Vec<u8>,
+        flushes: usize,
+    }
+
+    impl Write for RecordingWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.bytes.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flushes += 1;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn terminal_streaming_flushes_each_candidate() {
+        let mut writer = RecordingWriter::default();
+        let printed = super::write_candidates(
+            &mut ["one".to_string(), "two".to_string()].into_iter(),
+            0,
+            &mut writer,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(printed, 2);
+        assert_eq!(writer.flushes, 3);
+        assert_eq!(String::from_utf8(writer.bytes).unwrap(), "one\ntwo\n");
+    }
+
+    #[test]
+    fn limit_does_not_pull_extra_candidate() {
+        let mut next_calls = 0usize;
+        let mut candidates = std::iter::from_fn(|| {
+            next_calls += 1;
+            Some(next_calls.to_string())
+        });
+        let mut writer = RecordingWriter::default();
+
+        let printed = super::write_candidates(&mut candidates, 1, &mut writer, false).unwrap();
+
+        assert_eq!(printed, 1);
+        assert_eq!(next_calls, 1);
+        assert_eq!(String::from_utf8(writer.bytes).unwrap(), "1\n");
     }
 }
 
@@ -177,19 +254,27 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let stdout = io::stdout();
-    let mut out = BufWriter::new(stdout.lock());
-
     let mut enumerator = CandidateEnumerator::new(&config);
-    let mut printed = 0usize;
-    while let Some(candidate) = enumerator.next() {
-        if cli.limit != 0 && printed >= cli.limit {
-            break;
+    let stdout = io::stdout();
+    let printed = if stdout.is_terminal() {
+        let mut out = stdout.lock();
+        match write_candidates(&mut enumerator, cli.limit, &mut out, true) {
+            Ok(printed) => printed,
+            Err(err) => {
+                eprintln!("error: failed to write candidates: {err}");
+                return ExitCode::from(1);
+            }
         }
-        let _ = writeln!(out, "{candidate}");
-        printed += 1;
-    }
-    let _ = out.flush();
+    } else {
+        let mut out = BufWriter::new(stdout.lock());
+        match write_candidates(&mut enumerator, cli.limit, &mut out, false) {
+            Ok(printed) => printed,
+            Err(err) => {
+                eprintln!("error: failed to write candidates: {err}");
+                return ExitCode::from(1);
+            }
+        }
+    };
 
     if !cli.quiet {
         if cli.limit != 0 {

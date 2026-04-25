@@ -10,13 +10,14 @@ For the fuller project context and current implementation state, start with [`HA
 - Candidate generation is now lazy through `CandidateEnumerator`.
 - The enumerator can produce and restore a `CandidateCheckpoint`, so a run can be paused and resumed without rechecking already processed candidates.
 - `SearchCheckpointFile` can serialize that state and the search configuration to disk for later resumption.
-- The CLI in `src/bin/enumerate.rs` now streams candidates instead of collecting the full result set first.
+- The CLI in `src/bin/enumerate.rs` now streams candidates instead of collecting the full result set first, and flushes each candidate when stdout is a terminal.
 - The CLI also supports `--count` to print a closed-form count for the simplified insert/delete/replace model without emitting candidates.
 
 ## What Is Still Missing
 
 - A small runner that saves progress and resumes from the last checkpoint on startup.
 - Worker integration that consumes candidates until the first success.
+- Finer-grained generation within a distance layer. The current enumerator must build, deduplicate, and sort each distance layer before emitting that layer.
 
 ## Status
 
