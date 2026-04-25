@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+keepass = { version = "0.10.6", features = ["save_kdbx4"] }
 
 [[bin]]
 name = "enumerate"
