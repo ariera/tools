@@ -191,7 +191,7 @@ impl PipelinedOrderedCandidateEnumerator {
         self.config
             .keyboard_neighbors
             .get(&from)
-            .map_or(false, |neighbors| neighbors.contains(&to))
+            .is_some_and(|neighbors| neighbors.contains(&to))
     }
 
     fn record_local_neighbor(local: &mut HashMap<Vec<char>, u32>, child: Vec<char>, delta_cost: u32) {
