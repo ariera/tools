@@ -2,3 +2,10 @@
 name = "pipelined"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+
+[[bin]]
+name = "enumerate"
+path = "src/bin/enumerate.rs"

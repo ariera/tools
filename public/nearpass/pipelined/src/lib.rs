@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
 use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DistanceMode {
@@ -67,6 +68,19 @@ pub struct SearchConfig {
 pub enum ConfigError {
     InvalidDistanceBand { min: usize, max: usize },
     MaxDistanceTooLarge { max: usize },
+}
+
+impl fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidDistanceBand { min, max } => {
+                write!(f, "min_distance ({min}) must not exceed max_distance ({max})")
+            }
+            Self::MaxDistanceTooLarge { max } => {
+                write!(f, "max_distance ({max}) is too large; would cause cost overflow")
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
