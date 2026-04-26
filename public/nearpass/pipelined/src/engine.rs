@@ -10,8 +10,8 @@ use crossbeam_channel::{bounded, unbounded, RecvTimeoutError};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config_hash, Candidate, CandidatePredicate, EnumeratorSnapshot, PipelinedOrderedCandidateEnumerator,
-    SearchConfig, SnapshotError,
+    config_hash, make_candidate_enumerator, AnyEnumeratorSnapshot, Candidate, CandidateEnumerator,
+    CandidatePredicate, EnumeratorStrategy, SearchConfig, SnapshotError,
 };
 
 // ---------------------------------------------------------------------------
@@ -37,6 +37,7 @@ pub struct EngineConfig {
     pub checkpoint_every: Duration,
     pub progress_every: Duration,
     pub success_semantics: SuccessSemantics,
+    pub strategy: EnumeratorStrategy,
 }
 
 impl Default for EngineConfig {
@@ -48,6 +49,7 @@ impl Default for EngineConfig {
             checkpoint_every: Duration::from_secs(60),
             progress_every: Duration::from_secs(10),
             success_semantics: SuccessSemantics::FirstDiscovered,
+            strategy: EnumeratorStrategy::Auto,
         }
     }
 }
@@ -101,7 +103,7 @@ struct EngineCheckpoint {
     schema_version: u32,
     config_hash: String,
     success_semantics: SuccessSemantics,
-    enumerator_snapshot: EnumeratorSnapshot,
+    enumerator_snapshot: AnyEnumeratorSnapshot,
     /// Candidates dispatched to workers but not yet resolved at checkpoint time.
     /// Re-tested on resume (predicate must be pure).
     pending: Vec<Candidate>,
@@ -186,7 +188,7 @@ fn worker_loop(
 // ---------------------------------------------------------------------------
 
 struct Controller {
-    enumerator: PipelinedOrderedCandidateEnumerator,
+    enumerator: CandidateEnumerator,
     /// Candidates dispatched but not yet resolved.
     pending: BTreeMap<u64, Candidate>,
     generated_count: u64,
@@ -202,7 +204,7 @@ struct Controller {
 }
 
 impl Controller {
-    fn new(enumerator: PipelinedOrderedCandidateEnumerator) -> Self {
+    fn new(enumerator: CandidateEnumerator) -> Self {
         Self {
             enumerator,
             pending: BTreeMap::new(),
@@ -216,10 +218,7 @@ impl Controller {
         }
     }
 
-    fn from_checkpoint(
-        enumerator: PipelinedOrderedCandidateEnumerator,
-        cp: EngineCheckpoint,
-    ) -> Self {
+    fn from_checkpoint(enumerator: CandidateEnumerator, cp: EngineCheckpoint) -> Self {
         let mut ctrl = Self::new(enumerator);
         ctrl.generated_count = cp.generated_count;
         ctrl.completed_false_count = cp.completed_false_count;
@@ -231,8 +230,8 @@ impl Controller {
         ctrl
     }
 
-    fn snapshot(&self) -> EnumeratorSnapshot {
-        self.enumerator.snapshot()
+    fn snapshot_any(&self) -> AnyEnumeratorSnapshot {
+        self.enumerator.snapshot_any()
     }
 
     fn to_checkpoint(
@@ -244,7 +243,7 @@ impl Controller {
             schema_version: 1,
             config_hash: config_hash(search_config),
             success_semantics,
-            enumerator_snapshot: self.snapshot(),
+            enumerator_snapshot: self.snapshot_any(),
             pending: self.pending.values().cloned().collect(),
             generated_count: self.generated_count,
             completed_false_count: self.completed_false_count,
@@ -325,25 +324,28 @@ pub fn run(
                         cp.success_semantics, engine_config.success_semantics
                     )));
                 }
-                let enumerator = PipelinedOrderedCandidateEnumerator::from_snapshot(
+                let enumerator = CandidateEnumerator::from_any_snapshot(
                     search_config.clone(),
                     cp.enumerator_snapshot.clone(),
                 )
                 .map_err(RunError::SnapshotError)?;
                 Controller::from_checkpoint(enumerator, cp)
             } else {
-                let enumerator = PipelinedOrderedCandidateEnumerator::new(search_config.clone())
-                    .map_err(RunError::ConfigError)?;
+                let enumerator =
+                    make_candidate_enumerator(search_config.clone(), engine_config.strategy)
+                        .map_err(RunError::ConfigError)?;
                 Controller::new(enumerator)
             }
         } else {
-            let enumerator = PipelinedOrderedCandidateEnumerator::new(search_config.clone())
-                .map_err(RunError::ConfigError)?;
+            let enumerator =
+                make_candidate_enumerator(search_config.clone(), engine_config.strategy)
+                    .map_err(RunError::ConfigError)?;
             Controller::new(enumerator)
         }
     } else {
-        let enumerator = PipelinedOrderedCandidateEnumerator::new(search_config.clone())
-            .map_err(RunError::ConfigError)?;
+        let enumerator =
+            make_candidate_enumerator(search_config.clone(), engine_config.strategy)
+                .map_err(RunError::ConfigError)?;
         Controller::new(enumerator)
     };
 
@@ -547,7 +549,7 @@ fn num_cpus() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DistanceMode, EditOps, SearchConfig};
+    use crate::{DistanceMode, EditOps, EnumeratorStrategy, SearchConfig};
     use std::collections::HashMap;
 
     fn simple_config(seed: &str) -> SearchConfig {
@@ -570,6 +572,7 @@ mod tests {
             checkpoint_every: Duration::from_secs(3600),
             progress_every: Duration::from_secs(3600),
             success_semantics: semantics,
+            strategy: EnumeratorStrategy::OrderedGraph,
         }
     }
 

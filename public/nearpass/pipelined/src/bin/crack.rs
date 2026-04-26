@@ -7,7 +7,7 @@ use std::time::Duration;
 use clap::{Parser, ValueEnum};
 use pipelined::{
     engine::{EngineConfig, StopReason, SuccessSemantics},
-    run, DistanceMode, EditOps, KeePassWorker, SearchConfig,
+    run, DistanceMode, EditOps, EnumeratorStrategy, KeePassWorker, SearchConfig,
 };
 
 /// Search a KeePass database for a password in an edit-distance neighborhood of a seed.
@@ -79,6 +79,10 @@ struct Cli {
     /// Suppress progress output
     #[arg(long)]
     quiet: bool,
+
+    /// Candidate generation strategy: auto, ordered-graph, or streaming
+    #[arg(long, value_enum, default_value_t = Strategy::Auto)]
+    strategy: Strategy,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -130,6 +134,26 @@ enum Semantics {
     FirstDiscovered,
     /// Stop only when the lowest-ordinal (shortest edit path) match is confirmed
     OrderedFirst,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+enum Strategy {
+    /// Use ordered graph for small searches, streaming for large
+    Auto,
+    /// Ordered graph: exact (distance, cost, lexical) order
+    OrderedGraph,
+    /// Streaming DFS: bounded memory; requires global-minimum mode, no swap
+    Streaming,
+}
+
+impl Strategy {
+    fn to_enumerator_strategy(self) -> EnumeratorStrategy {
+        match self {
+            Self::Auto => EnumeratorStrategy::Auto,
+            Self::OrderedGraph => EnumeratorStrategy::OrderedGraph,
+            Self::Streaming => EnumeratorStrategy::StreamingLevenshtein,
+        }
+    }
 }
 
 fn common_symbols() -> &'static [char] {
@@ -222,6 +246,7 @@ fn main() -> ExitCode {
             Duration::from_secs(cli.progress_every)
         },
         success_semantics,
+        strategy: cli.strategy.to_enumerator_strategy(),
     };
 
     if !cli.quiet {

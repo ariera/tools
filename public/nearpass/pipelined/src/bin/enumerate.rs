@@ -4,7 +4,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, ValueEnum};
 use pipelined::{
-    DistanceMode, EditOps, PipelinedOrderedCandidateEnumerator, SearchConfig,
+    make_candidate_enumerator, CandidateEnumerator, Candidate, DistanceMode, EditOps,
+    EnumeratorStrategy, SearchConfig,
 };
 
 /// Enumerate strings in a bounded edit-distance neighborhood of a seed.
@@ -56,6 +57,30 @@ struct Cli {
     /// Suppress the trailing "N candidates" status line on stderr
     #[arg(long)]
     quiet: bool,
+
+    /// Candidate generation strategy: auto, ordered-graph, or streaming
+    #[arg(long, value_enum, default_value_t = Strategy::Auto)]
+    strategy: Strategy,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+enum Strategy {
+    /// Use ordered graph for small searches, streaming for large
+    Auto,
+    /// Ordered graph: exact (distance, cost, lexical) order
+    OrderedGraph,
+    /// Streaming DFS: bounded memory; requires global-minimum mode, no swap
+    Streaming,
+}
+
+impl Strategy {
+    fn to_enumerator_strategy(self) -> EnumeratorStrategy {
+        match self {
+            Self::Auto => EnumeratorStrategy::Auto,
+            Self::OrderedGraph => EnumeratorStrategy::OrderedGraph,
+            Self::Streaming => EnumeratorStrategy::StreamingLevenshtein,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -146,7 +171,7 @@ fn qwerty_neighbors() -> HashMap<char, HashSet<char>> {
 }
 
 fn write_candidates<W: Write>(
-    enumerator: &mut PipelinedOrderedCandidateEnumerator,
+    enumerator: &mut impl Iterator<Item = Candidate>,
     limit: usize,
     verbose: bool,
     out: &mut W,
@@ -200,6 +225,13 @@ mod tests {
     fn verbose_flag_parses() {
         let cli = Cli::try_parse_from(["enumerate", "abc", "--verbose"]).unwrap();
         assert!(cli.verbose);
+    }
+
+    #[test]
+    fn strategy_flag_parses() {
+        let cli =
+            Cli::try_parse_from(["enumerate", "abc", "--strategy", "streaming"]).unwrap();
+        assert!(matches!(cli.strategy, super::Strategy::Streaming));
     }
 
     #[derive(Default)]
@@ -318,7 +350,9 @@ fn main() -> ExitCode {
         distance_mode,
     };
 
-    let mut enumerator = match PipelinedOrderedCandidateEnumerator::new(config) {
+    let strategy = cli.strategy.to_enumerator_strategy();
+
+    let mut enumerator = match make_candidate_enumerator(config, strategy) {
         Ok(e) => e,
         Err(err) => {
             eprintln!("error: {err}");
@@ -348,22 +382,38 @@ fn main() -> ExitCode {
     };
 
     if cli.stats {
-        let s = enumerator.stats();
-        eprintln!(
-            "stats: popped={} stale_skipped={} global_dup_skipped={} expanded={} \
-             raw_neighbors={} local_unique={} relaxed_new={} relaxed_improved={} \
-             relaxed_not_better={} emitted={}",
-            s.popped,
-            s.stale_skipped,
-            s.global_duplicate_skipped,
-            s.expanded,
-            s.raw_neighbors_generated,
-            s.local_unique_neighbors,
-            s.relaxed_new,
-            s.relaxed_improved,
-            s.relaxed_not_better,
-            s.emitted,
-        );
+        match &enumerator {
+            CandidateEnumerator::Ordered(e) => {
+                let s = e.stats();
+                eprintln!(
+                    "stats: popped={} stale_skipped={} global_dup_skipped={} expanded={} \
+                     raw_neighbors={} local_unique={} relaxed_new={} relaxed_improved={} \
+                     relaxed_not_better={} emitted={}",
+                    s.popped,
+                    s.stale_skipped,
+                    s.global_duplicate_skipped,
+                    s.expanded,
+                    s.raw_neighbors_generated,
+                    s.local_unique_neighbors,
+                    s.relaxed_new,
+                    s.relaxed_improved,
+                    s.relaxed_not_better,
+                    s.emitted,
+                );
+            }
+            CandidateEnumerator::Streaming(e) => {
+                let s = e.stats();
+                eprintln!(
+                    "stats: prefixes_visited={} prefixes_pruned={} leaves_checked={} \
+                     emitted={} rows_computed={}",
+                    s.prefixes_visited,
+                    s.prefixes_pruned,
+                    s.leaves_checked,
+                    s.emitted,
+                    s.rows_computed,
+                );
+            }
+        }
     }
 
     if !cli.quiet {
