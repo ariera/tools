@@ -1,4 +1,4 @@
-use pipelined::{OpenError, CandidatePredicate, KeePassWorker};
+use nearpass::{OpenError, CandidatePredicate, KeePassWorker};
 use std::path::PathBuf;
 
 #[test]

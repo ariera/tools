@@ -1,4 +1,4 @@
-use pipelined::{CandidatePredicate, KeePassWorker};
+use nearpass::{CandidatePredicate, KeePassWorker};
 use std::path::PathBuf;
 
 fn main() {

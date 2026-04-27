@@ -3,7 +3,7 @@ use std::io::{self, BufWriter, IsTerminal, Write};
 use std::process::ExitCode;
 
 use clap::{Parser, ValueEnum};
-use pipelined::{
+use nearpass::{
     make_candidate_enumerator, CandidateEnumerator, Candidate, DistanceMode, EditOps,
     EnumeratorStrategy, SearchConfig,
 };
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn terminal_streaming_flushes_each_candidate() {
-        use pipelined::{DistanceMode, EditOps, PipelinedOrderedCandidateEnumerator, SearchConfig};
+        use nearpass::{DistanceMode, EditOps, PipelinedOrderedCandidateEnumerator, SearchConfig};
         use std::collections::HashMap;
 
         let cfg = SearchConfig {
@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn limit_does_not_pull_extra_candidate() {
-        use pipelined::{DistanceMode, EditOps, PipelinedOrderedCandidateEnumerator, SearchConfig};
+        use nearpass::{DistanceMode, EditOps, PipelinedOrderedCandidateEnumerator, SearchConfig};
         use std::collections::HashMap;
 
         let cfg = SearchConfig {
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn verbose_output_includes_distance_and_cost() {
-        use pipelined::{DistanceMode, EditOps, PipelinedOrderedCandidateEnumerator, SearchConfig};
+        use nearpass::{DistanceMode, EditOps, PipelinedOrderedCandidateEnumerator, SearchConfig};
         use std::collections::HashMap;
 
         let cfg = SearchConfig {

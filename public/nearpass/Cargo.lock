@@ -647,6 +647,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "nearpass"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "clap",
+ "crossbeam-channel",
+ "ctrlc",
+ "keepass",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nix"
 version = "0.31.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -693,19 +706,6 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
-
-[[package]]
-name = "pipelined"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "clap",
- "crossbeam-channel",
- "ctrlc",
- "keepass",
- "serde",
- "serde_json",
-]
 
 [[package]]
 name = "prettyplease"

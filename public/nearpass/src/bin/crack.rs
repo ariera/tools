@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
-use pipelined::{
+use nearpass::{
     engine::{EngineConfig, StopReason, SuccessSemantics},
     run, DistanceMode, EditOps, EnumeratorStrategy, KeePassWorker, SearchConfig,
 };
