@@ -1,8 +1,15 @@
-# Pipelined Ordered Candidate Enumerator
+# nearpass
 
-A Rust implementation of a streaming edit-distance neighborhood enumerator.
+A Rust tool for recovering forgotten KeePass passwords via edit-distance search.
 
-Candidates are emitted in strict **(distance, cost, lexical)** order — the same ordering contract as a traditional layer-sort enumerator — but without the blocking pause that comes from building and sorting an entire distance layer before emitting the first result. Work is distributed one parent-expansion per emission, so output starts immediately and stays responsive throughout.
+Given a seed (your best guess at the password), `nearpass` enumerates every string within a bounded edit-distance neighborhood of that seed and tries each one against the database in parallel, stopping as soon as one opens it.
+
+## Binaries
+
+| Binary | Purpose |
+|--------|---------|
+| `crack` | Search a `.kdbx` database for a password near a seed |
+| `enumerate` | Explore the candidate search space without a database |
 
 ## Build
 
@@ -10,27 +17,80 @@ Candidates are emitted in strict **(distance, cost, lexical)** order — the sam
 cargo build --release
 ```
 
-The binary is placed at:
+Binaries land at `target/release/crack` and `target/release/enumerate`.
 
-```
-target/release/enumerate
-```
-
-Run directly during development with:
+Run during development with:
 
 ```bash
+cargo run --bin crack -- [OPTIONS] <DB> <SEED>
 cargo run --bin enumerate -- [OPTIONS] <SEED>
 ```
 
-## Usage
+---
+
+## `crack` — recover a KeePass password
 
 ```
-enumerate [OPTIONS] <SEED>
+crack <DB_PATH> <SEED> [OPTIONS]
 ```
 
-`SEED` is the string to explore around. All other arguments are optional.
+| Argument / Flag | Default | Description |
+|-----------------|---------|-------------|
+| `<DB_PATH>` | — | Path to the `.kdbx` file |
+| `<SEED>` | — | Your best guess at the password |
+| `--min <N>` | `1` | Minimum edit distance to search (inclusive) |
+| `--max <N>` | `2` | Maximum edit distance to search (inclusive) |
+| `--preset <PRESET>` | `lowercase` | Predefined alphabet (see below) |
+| `--alphabet <CHARS>` | — | Custom alphabet string; overrides `--preset` |
+| `--qwerty` | off | Weight keyboard-neighbor substitutions as more likely |
+| `--mode <MODE>` | `per-distance` | Deduplication mode (see below) |
+| `--workers <N>` | logical CPUs | Number of parallel worker threads |
+| `--max-pending <N>` | `256` | Max candidates in-flight at once |
+| `--semantics <S>` | `first-discovered` | Stop condition (see below) |
+| `--checkpoint <PATH>` | — | File for checkpoint/resume state |
+| `--resume` | off | Resume from an existing checkpoint |
+| `--checkpoint-every <N>` | — | Checkpoint after every N candidates tried |
+| `--progress-every <N>` | — | Print progress to stderr every N candidates |
 
-## Flags
+Exit codes: `0` = password found (printed to stdout), `1` = not found / cancelled, `2` = error.
+
+### Quick example
+
+```bash
+# Test database (password: "qwerty") shipped in assets/
+./target/release/crack assets/qwerty.kdbx qwerty --min 0 --max 0
+# → qwerty
+```
+
+```bash
+# More realistic: seed is close but not exact, search distance 1–2
+./target/release/crack myvault.kdbx password --max 2 --preset letters-numbers --qwerty
+```
+
+### Success semantics
+
+| Value | Behaviour |
+|-------|-----------|
+| `first-discovered` (default) | Stops the moment any worker returns a hit. Fastest. |
+| `ordered-first` | Stops only after confirming the lowest-cost hit. Guarantees the result closest to the seed. |
+
+### Checkpoint / resume
+
+```bash
+# Start a long search with checkpointing
+./target/release/crack vault.kdbx hunter2 --max 3 --checkpoint ckpt.json
+
+# Resume after interruption
+./target/release/crack vault.kdbx hunter2 --max 3 --checkpoint ckpt.json --resume
+```
+
+---
+
+## `enumerate` — explore the search space
+
+```
+enumerate <SEED> [OPTIONS]
+```
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -41,11 +101,28 @@ enumerate [OPTIONS] <SEED>
 | `--qwerty` | off | Enable QWERTY keyboard-neighbor likelihood scoring |
 | `--limit <N>` | `0` | Stop after N candidates (0 = no limit) |
 | `--mode <MODE>` | `per-distance` | Deduplication mode (see below) |
-| `--verbose` | off | Print `distance`, `cost`, and `text` columns (tab-separated) |
-| `--stats` | off | Print enumeration statistics to stderr after finishing |
+| `--verbose` | off | Print `distance`, `cost`, `text` columns (tab-separated) |
+| `--stats` | off | Print enumeration statistics to stderr |
 | `--quiet` | off | Suppress the trailing "N candidates" line on stderr |
 
-### Alphabet presets
+Candidates are emitted in strict **(distance, cost, lexical)** order without blocking to sort an entire layer first — output starts immediately.
+
+### Examples
+
+```bash
+# All distance-1 neighbors of "patter" with keyboard scoring
+enumerate patter --max 1 --qwerty --verbose | head -10
+
+# Count distance-2 candidates
+enumerate patter --max 2 --qwerty --quiet | wc -l
+
+# Pipe to crack (global-minimum avoids retrying the same string)
+enumerate vault-seed --max 2 --mode global-minimum --quiet > candidates.txt
+```
+
+---
+
+## Alphabet presets
 
 | Preset | Contents | Size |
 |--------|----------|------|
@@ -55,75 +132,27 @@ enumerate [OPTIONS] <SEED>
 | `letters-numbers-symbols` | letters, digits, space, common symbols | ~79 |
 | `full-ascii` | All printable ASCII (32–126) | 95 |
 
-Use `--alphabet` to pass an arbitrary character set:
+Use `--alphabet` for an arbitrary character set:
 
 ```bash
 enumerate abc --alphabet abcde
 ```
 
-## Modes
-
-The `--mode` flag controls how candidates that are reachable at multiple edit depths are handled. For most seeds and alphabets, the same string can be reached at distance 1 (e.g. delete a character) and again at distance 2 (e.g. delete then reinsert). The two modes differ in whether that second occurrence is emitted.
+## Deduplication modes
 
 ### `per-distance` (default)
 
-Each candidate string may appear **once per distance layer**, using the best (lowest) accumulated cost path known at that depth. A string reachable at both distance 1 and distance 2 is emitted twice — once in each layer.
+Each string may appear **once per distance layer** at the best (lowest) cost for that depth. A string reachable at both distance 1 and distance 2 is emitted twice.
 
-Use this mode when you need results that match a traditional layer-by-layer enumerator, or when the cost of reaching a string at each specific depth is meaningful to you.
-
-```bash
-enumerate a --min 0 --max 2 --alphabet ab --mode per-distance --verbose --quiet
-```
-
-```
-0	0	a
-1	2	
-1	2	aa
-1	2	ab
-1	2	ba
-1	3	b
-2	3	ab      ← "ab" also appeared at distance 1
-2	3	ba      ← "ba" also appeared at distance 1
-2	4	a       ← "a" reappears at distance 2 (delete + reinsert, cost 4)
-2	4	aaa
-...
-```
+Use this when you need results that match a traditional layer-sort enumerator, or when the cost at each specific depth matters.
 
 ### `global-minimum`
 
-Each candidate string is emitted **only once**, at its minimum reachable distance. Any path that reaches an already-emitted string at a later depth is suppressed.
+Each string is emitted **only once**, at its minimum reachable distance. Later paths to an already-emitted string are suppressed.
 
-Use this mode when you want a clean set of distinct candidate strings for downstream processing — for example, feeding a worker that should try each string exactly once.
+Use this when feeding a worker that should try each candidate exactly once.
 
-```bash
-enumerate a --min 0 --max 2 --alphabet ab --mode global-minimum --verbose --quiet
-```
-
-```
-0	0	a
-1	2	
-1	2	aa
-1	2	ab
-1	2	ba
-1	3	b
-2	4	aaa
-2	4	aab     ← strings like "ab", "ba", "a" are absent: already emitted at distance 1 or 0
-2	4	aba
-...
-```
-
-### Which mode to choose
-
-| Situation | Recommended mode |
-|-----------|-----------------|
-| Feeding a worker that should try each string once | `global-minimum` |
-| Studying how cost accumulates across depths | `per-distance` |
-| Matching the output of a traditional layer-sort enumerator | `per-distance` |
-| Minimising total number of emitted candidates | `global-minimum` |
-
-## Likelihood costs
-
-Edit costs reflect how likely a given mutation is as a typing error:
+## Edit costs
 
 | Operation | Cost |
 |-----------|------|
@@ -133,105 +162,10 @@ Edit costs reflect how likely a given mutation is as a typing error:
 | Replace with a non-neighbor character | 3 |
 | Swap two adjacent distinct characters | 1 |
 
-Candidates are sorted by accumulated cost within each distance layer, so keyboard-plausible typos surface before unlikely character replacements.
+## Test assets
 
-## Output format
-
-By default, one candidate per line:
-
-```
-hello
-helo
-hlelo
-```
-
-With `--verbose`, columns are tab-separated `distance`, `cost`, `text`:
-
-```
-1	1	hlelo
-1	2	ehllo
-1	2	helo
-```
-
-The trailing status line is written to **stderr**, not stdout, so piped output contains only candidates:
+`assets/qwerty.kdbx` is a KeePass 4 database created for smoke-testing. Password: `qwerty`.
 
 ```bash
-enumerate patter --max 2 --quiet | wc -l
+./target/release/crack assets/qwerty.kdbx qwerty --min 0 --max 0
 ```
-
-## Examples
-
-### Distance-1 neighbors with a small alphabet
-
-```bash
-enumerate a --min 1 --max 1 --alphabet ab
-```
-
-```
-
-aa
-ab
-ba
-b
-5 candidates
-```
-
-### Sorted by cost — swap before delete/insert/replace
-
-```bash
-enumerate ab --min 1 --max 1 --alphabet ab --verbose
-```
-
-```
-1	1	ba
-1	2	a
-1	2	aab
-1	2	aba
-1	2	abb
-1	2	b
-1	2	bab
-1	3	aa
-1	3	bb
-9 candidates
-```
-
-The swap (`ab` → `ba`, cost 1) sorts before all cost-2 and cost-3 results.
-
-### Keyboard-aware scoring
-
-```bash
-enumerate patter --max 1 --qwerty --verbose | head -10
-```
-
-Keyboard neighbors of each character get cost 1, all other replacements get cost 3, so near-keyboard typos appear first.
-
-### Distance-2 with stats
-
-```bash
-enumerate patter --max 2 --qwerty --stats --quiet | wc -l
-```
-
-```
-51348
-stats: popped=51442 stale_skipped=93 global_dup_skipped=0 expanded=336 raw_neighbors=124040 local_unique=121582 relaxed_new=51348 relaxed_improved=93 relaxed_not_better=70141 emitted=51348
-```
-
-### Show only distance-2 candidates
-
-```bash
-enumerate patter --min 2 --max 2 --qwerty --quiet | head -5
-```
-
-### Stop after a fixed number of results
-
-```bash
-enumerate patter --max 2 --limit 20
-```
-
-### Pipe-friendly (buffered output)
-
-```bash
-enumerate patter --max 2 --quiet > candidates.txt
-```
-
-When stdout is not a terminal the writer is automatically buffered. When stdout is a terminal each candidate is flushed immediately for responsive streaming.
