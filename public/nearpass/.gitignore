@@ -1,0 +1,13 @@
+# Rust build output
+**/target/
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
+
+# Editor settings
+.idea/
+.vscode/
+
+# Logs
+*.log
