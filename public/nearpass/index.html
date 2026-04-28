@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>nearpass</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      min-height: 100vh;
+      padding: 4rem 1rem 3rem;
+    }
+
+    nav {
+      position: fixed;
+      top: 1rem;
+      left: 1.5rem;
+      font-size: 0.85rem;
+    }
+    nav a { color: #0066cc; text-decoration: none; }
+    nav a:hover { text-decoration: underline; }
+
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 12px;
+      padding: 2.5rem 3rem;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+
+    /* Markdown rendered content */
+    .md h1 { font-size: 1.8rem; margin-bottom: 0.4rem; }
+    .md h2 { font-size: 1.25rem; margin: 1.8rem 0 0.6rem; border-bottom: 1px solid #e5e5e5; padding-bottom: 0.3rem; }
+    .md h3 { font-size: 1.05rem; margin: 1.4rem 0 0.4rem; }
+    .md p  { line-height: 1.65; margin: 0.7rem 0; }
+    .md a  { color: #0066cc; }
+    .md code {
+      font-family: "SF Mono", Menlo, monospace;
+      font-size: 0.875em;
+      background: #f0f0f5;
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+    }
+    .md pre {
+      background: #1d1d1f;
+      color: #f0f0f0;
+      border-radius: 8px;
+      padding: 1.2rem 1.4rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+    .md pre code {
+      background: none;
+      padding: 0;
+      font-size: 0.85rem;
+      color: inherit;
+    }
+    .md table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1rem 0;
+      font-size: 0.9rem;
+    }
+    .md th, .md td {
+      border: 1px solid #ddd;
+      padding: 0.5rem 0.8rem;
+      text-align: left;
+    }
+    .md th { background: #f5f5f7; font-weight: 600; }
+    .md ul, .md ol { padding-left: 1.5rem; margin: 0.5rem 0; }
+    .md li { margin: 0.25rem 0; line-height: 1.6; }
+    .md hr { border: none; border-top: 1px solid #e5e5e5; margin: 1.5rem 0; }
+
+    #error {
+      color: #c0392b;
+      padding: 1rem;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <nav><a href="/tools/">← Tools</a></nav>
+  <main>
+    <div id="error">Failed to load README.md.</div>
+    <div id="content" class="md"></div>
+  </main>
+  <script>
+    fetch('README.md')
+      .then(r => {
+        if (!r.ok) throw new Error(r.status);
+        return r.text();
+      })
+      .then(md => {
+        document.getElementById('content').innerHTML = marked.parse(md);
+      })
+      .catch(() => {
+        document.getElementById('error').style.display = 'block';
+      });
+  </script>
+</body>
+</html>
