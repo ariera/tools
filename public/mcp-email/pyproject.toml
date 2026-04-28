@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-email"
+version = "0.1.0"
+description = "Restricted internal email MCP server"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.1",
+    "email-validator>=2.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+mcp-email = "mcp_email.server:main"
+mcp-email-admin = "mcp_email.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_email"]
