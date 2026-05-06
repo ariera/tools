@@ -85,6 +85,7 @@
     .node rect.header-fill { fill: #eaeff8; }
     .node line.div { stroke: #e0e0e0; stroke-width: 1; }
     .node text.ename { font-size: 12.5px; font-weight: 700; fill: #1a2848; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+    .node text.btsub { font-size: 10px; fill: #7a7a9a; font-style: italic; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
     .node text.ftype { font-size: 10.5px; fill: #999; font-family: "SF Mono", Menlo, monospace; dominant-baseline: central; pointer-events: none; }
     .node text.fname { font-size: 10.5px; fill: #333; dominant-baseline: central; pointer-events: none; }
     .node text.fcon  { font-size: 9.5px; fill: #bbb; font-style: italic; dominant-baseline: central; text-anchor: end; pointer-events: none; }
@@ -94,7 +95,6 @@
     .link line.hit  { stroke: transparent; stroke-width: 14; }
     .link line.edge { stroke: #bbb; stroke-width: 1.5; fill: none; pointer-events: none; }
     .link line.edge.dashed { stroke-dasharray: 5 3; }
-    .link text.lbl  { font-size: 9.5px; fill: #bbb; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
     .link .card line   { stroke: #bbb; stroke-width: 1.5; pointer-events: none; }
     .link .card circle { fill: #f0f0f3; stroke: #bbb; stroke-width: 1.5; pointer-events: none; }
 
@@ -124,13 +124,13 @@
     .link.sm-none  { opacity: 0.08; pointer-events: none; }
 
     /* ── Relationship tooltip ── */
-    #rel-tip { display: none; position: absolute; background: #fff; border: 1px solid #ddd; border-radius: 9px; padding: 0.65rem 0.8rem 0.7rem; box-shadow: 0 4px 20px rgba(0,0,0,0.13); max-width: 300px; min-width: 180px; z-index: 100; }
+    #rel-tip { display: none; position: absolute; background: #fff; border: 1px solid #ddd; border-radius: 9px; padding: 0.65rem 0.8rem 0.7rem; box-shadow: 0 4px 20px rgba(0,0,0,0.13); max-width: min(520px, calc(100vw - 40px)); min-width: 180px; z-index: 100; }
     #rel-tip .rt-row1 { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
     #rel-tip .rt-entities { font-size: 0.82rem; font-weight: 700; color: #1a2848; line-height: 1.3; }
     #rel-tip .rt-close { background: none; border: none; cursor: pointer; color: #ccc; font-size: 1.1rem; line-height: 1; padding: 0; flex-shrink: 0; }
     #rel-tip .rt-close:hover { color: #666; }
     #rel-tip .rt-card { font-size: 0.72rem; color: #aaa; margin-top: 0.2rem; }
-    #rel-tip .rt-label { margin-top: 0.5rem; font-family: "SF Mono", Menlo, monospace; font-size: 0.78rem; color: #333; background: #f5f5f7; border-radius: 5px; padding: 0.35rem 0.55rem; word-break: break-all; line-height: 1.5; white-space: pre-wrap; }
+    #rel-tip .rt-label { margin-top: 0.5rem; font-family: "SF Mono", Menlo, monospace; font-size: 0.78rem; color: #333; background: #f5f5f7; border-radius: 5px; padding: 0.35rem 0.55rem; overflow-wrap: break-word; line-height: 1.6; white-space: pre; }
 
     /* ── Hint ── */
     #hint { position: absolute; bottom: 0.8rem; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.52); color: #fff; font-size: 0.7rem; padding: 0.28rem 0.75rem; border-radius: 999px; pointer-events: none; opacity: 0; transition: opacity 0.3s; white-space: nowrap; }
@@ -190,6 +190,12 @@
           <input type="text" class="combo-input" id="field-filter" placeholder="Filter fields…" autocomplete="off">
           <div class="combo-drop" id="field-drop"></div>
         </div>
+
+        <span class="sub-label">Base table</span>
+        <div class="combo" id="basetable-combo">
+          <input type="text" class="combo-input" id="basetable-filter" placeholder="Filter base tables…" autocomplete="off">
+          <div class="combo-drop" id="basetable-drop"></div>
+        </div>
       </div>
 
       <span id="stats"></span>
@@ -215,19 +221,21 @@
 (() => {
   // ─── Constants ───────────────────────────────────────────────────────
   const MIN_W = 160, MAX_W = 480;
-  const NH = 34, FH = 22, FX = 10, COL_GAP = 10, BOTTOM_PAD = 8;
+  const NH = 34, BTH = 22, FH = 22, FX = 10, COL_GAP = 10, BOTTOM_PAD = 8;
 
   // ─── Canvas text measurement ──────────────────────────────────────────
   let _mctx = null;
   const mc = () => { if (!_mctx) _mctx = document.createElement('canvas').getContext('2d'); return _mctx; };
   const tw = (text, font) => { mc().font = font; return mc().measureText(text).width; };
-  const F_ENAME = 'bold 12.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-  const F_TYPE  = '10.5px "SF Mono", Menlo, monospace';
-  const F_FNAME = '10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-  const F_CON   = 'italic 9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  const F_ENAME  = 'bold 12.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  const F_BTABLE = 'italic 10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  const F_TYPE   = '10.5px "SF Mono", Menlo, monospace';
+  const F_FNAME  = '10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  const F_CON    = 'italic 9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
   function nodeDims(name, entity) {
     const headerW = FX * 2 + 20 + tw(name, F_ENAME);
+    const subW    = entity.baseTable ? FX * 2 + tw(entity.baseTable, F_BTABLE) : 0;
     let maxTypeW = 0, maxNameW = 0, maxConW = 0;
     for (const f of entity.fields) {
       maxTypeW = Math.max(maxTypeW, tw(f.type, F_TYPE));
@@ -236,10 +244,10 @@
     }
     const typeColX = FX + maxTypeW + COL_GAP;
     const fieldsW  = typeColX + maxNameW + (maxConW > 0 ? COL_GAP + maxConW : 0) + FX;
-    const width    = Math.max(MIN_W, Math.min(MAX_W, Math.max(headerW, entity.fields.length ? fieldsW : 0)));
+    const width    = Math.max(MIN_W, Math.min(MAX_W, Math.max(headerW, subW, entity.fields.length ? fieldsW : 0)));
     return { width, typeColX };
   }
-  const nodeH = e => NH + e.fields.length * FH + BOTTOM_PAD;
+  const nodeH = e => NH + (e.baseTable ? BTH : 0) + e.fields.length * FH + BOTTOM_PAD;
 
   // ─── State ────────────────────────────────────────────────────────────
   let simulation   = null, linkSel = null, nodeSel = null;
@@ -263,18 +271,25 @@
       const line = raw.trim();
       if (!line || line === 'erDiagram' || line.startsWith('%%')) continue;
       const eOpen = line.match(/^([A-Za-z_][\w-]*)\s*\{$/);
-      if (eOpen) { cur = eOpen[1]; if (!entities[cur]) entities[cur] = { fields: [] }; continue; }
+      if (eOpen) { cur = eOpen[1]; if (!entities[cur]) entities[cur] = { fields: [], baseTable: null }; continue; }
       if (line === '}') { cur = null; continue; }
       if (cur) {
         const fm = line.match(/^(\S+)\s+(\S+)(?:\s+(.+))?$/);
-        if (fm) entities[cur].fields.push({ type: fm[1], name: fm[2], con: fm[3]?.trim().replace(/"/g, '') || null });
+        if (fm) {
+          const field = { type: fm[1], name: fm[2], con: fm[3]?.trim().replace(/"/g, '') || null };
+          if (field.name === 'base_table_reference') {
+            entities[cur].baseTable = field.type;
+          } else {
+            entities[cur].fields.push(field);
+          }
+        }
         continue;
       }
       const rm = line.match(/^([A-Za-z_][\w-]*)\s+([|o}{]+[-.]+[|o}{]+)\s+([A-Za-z_][\w-]*)\s*:\s*"?([^"]*)"?$/);
       if (rm) {
         const [, from, rel, to, label] = rm;
-        if (!entities[from]) entities[from] = { fields: [] };
-        if (!entities[to])   entities[to]   = { fields: [] };
+        if (!entities[from]) entities[from] = { fields: [], baseTable: null };
+        if (!entities[to])   entities[to]   = { fields: [], baseTable: null };
         const m = rel.match(/^([|o}{]+)[-.]+([|o}{]+)$/);
         rels.push({ from, to, label: label.trim(), leftCard: m ? normCard(m[1]) : null, rightCard: m ? normCard(m[2]) : null, dashed: rel.includes('..') });
       }
@@ -288,6 +303,13 @@
     return null;
   }
   const CARD_LABELS = { one_only:'exactly one', one:'one', zero_or_one:'zero or one', zero:'zero', many:'many', one_or_many:'one or many', zero_or_many:'zero or many' };
+
+  // ─── Condition formatter ──────────────────────────────────────────────
+  function formatConditions(label) {
+    return label
+      .replace(/\s+(AND|OR)\s+/gi, '\n$1\n')
+      .split('\n').map(s => s.trim()).filter(Boolean).join('\n');
+  }
 
   // ─── Cardinality markers ──────────────────────────────────────────────
   function drawCard(parent, x, y, tx, ty, card) {
@@ -317,7 +339,6 @@
       const g = d3.select(this);
       g.select('line.hit').attr('x1',s.x).attr('y1',s.y).attr('x2',t.x).attr('y2',t.y);
       g.select('line.edge').attr('x1',s.x).attr('y1',s.y).attr('x2',t.x).attr('y2',t.y);
-      g.select('text.lbl').attr('x',(s.x+t.x)/2).attr('y',(s.y+t.y)/2 - 7);
       g.selectAll('.card').remove();
       drawCard(g, s.x, s.y, t.x, t.y, d.leftCard);
       drawCard(g, t.x, t.y, s.x, s.y, d.rightCard);
@@ -386,7 +407,6 @@
     linkSel = lg.selectAll('.link').data(links).join('g').attr('class','link');
     linkSel.append('line').attr('class','hit');
     linkSel.append('line').attr('class', d => 'edge'+(d.dashed?' dashed':''));
-    linkSel.append('text').attr('class','lbl').text(d => d.label.length<=24 ? d.label : d.label.slice(0,22)+'…');
     linkSel.on('click', (e,d) => { e.stopPropagation(); openRelTip(e,d); });
 
     nodeSel = ng.selectAll('.node').data(nodes, d=>d.id).join('g').attr('class','node').attr('data-id',d=>d.id)
@@ -399,16 +419,27 @@
 
     nodeSel.append('rect').attr('class','bg').attr('width',d=>d.width).attr('height',d=>d.height).attr('rx',7).attr('ry',7).style('filter','url(#shadow)');
     nodeSel.append('rect').attr('class','header-fill').attr('width',d=>d.width).attr('height',d=>d.height).attr('rx',7).attr('ry',7).attr('clip-path',d=>`url(#${safeId(d.id)}-hclip)`);
-    nodeSel.filter(d=>d.entity.fields.length>0).append('line').attr('class','div').attr('x1',0).attr('y1',NH).attr('x2',d=>d.width).attr('y2',NH);
     nodeSel.append('text').attr('class','ename').attr('x',d=>d.width/2).attr('y',NH/2).text(d=>d.id);
+
     nodeSel.each(function(d) {
       const g = d3.select(this);
-      d.entity.fields.forEach((f,i) => {
-        const y = NH + i*FH + FH/2;
-        g.append('text').attr('class','ftype').attr('x',FX).attr('y',y).text(f.type);
-        g.append('text').attr('class','fname').attr('x',d.typeColX).attr('y',y).attr('data-fname',f.name).text(f.name);
-        if (f.con) g.append('text').attr('class','fcon').attr('x',d.width-FX).attr('y',y).text(f.con);
-      });
+
+      if (d.entity.baseTable) {
+        g.append('line').attr('class','div').attr('x1',0).attr('y1',NH).attr('x2',d.width).attr('y2',NH);
+        g.append('text').attr('class','btsub').attr('x',d.width/2).attr('y',NH + BTH/2).text(d.entity.baseTable);
+      }
+
+      const fieldsY = NH + (d.entity.baseTable ? BTH : 0);
+
+      if (d.entity.fields.length > 0) {
+        g.append('line').attr('class','div').attr('x1',0).attr('y1',fieldsY).attr('x2',d.width).attr('y2',fieldsY);
+        d.entity.fields.forEach((f, i) => {
+          const y = fieldsY + i * FH + FH/2;
+          g.append('text').attr('class','ftype').attr('x',FX).attr('y',y).text(f.type);
+          g.append('text').attr('class','fname').attr('x',d.typeColX).attr('y',y).attr('data-fname',f.name).text(f.name);
+          if (f.con) g.append('text').attr('class','fcon').attr('x',d.width-FX).attr('y',y).text(f.con);
+        });
+      }
     });
 
     document.getElementById('stats').textContent = `${names.length} entities · ${links.length} relationships`;
@@ -452,6 +483,18 @@
     hint(`Showing all entities with field "${fieldName}"`);
   }
 
+  // ─── Base table highlight (basetable-dropdown) ────────────────────────
+  function highlightByBaseTable(baseTable) {
+    clearAllSearchVisual();
+    selectedEntity = null;
+    const matchedIds = new Set(currentNodes.filter(n => n.entity.baseTable === baseTable).map(n => n.id));
+    nodeSel.classed('selected', d => matchedIds.has(d.id)).classed('dimmed', d => !matchedIds.has(d.id)).classed('neighbour', false);
+    const activeIdx = new Set();
+    currentLinks.forEach((l, i) => { if (matchedIds.has(l.source.id) || matchedIds.has(l.target.id)) activeIdx.add(i); });
+    linkSel.classed('hl-active', (_, i) => activeIdx.has(i)).classed('dimmed', (_, i) => !activeIdx.has(i));
+    hint(`Showing entities on base table "${baseTable}"`);
+  }
+
   function clearHighlight() {
     selectedEntity = null;
     if (nodeSel) nodeSel.classed('selected neighbour dimmed', false);
@@ -468,9 +511,10 @@
 
     nodeSel.each(function(d) {
       const nameHit  = d.id.toLowerCase().includes(q);
+      const btHit    = d.entity.baseTable && d.entity.baseTable.toLowerCase().includes(q);
       const fieldHit = d.entity.fields.some(f=>f.name.toLowerCase().includes(q)||f.type.toLowerCase().includes(q));
-      if (nameHit||fieldHit) matchedIds.add(d.id);
-      d3.select(this).classed('sm-entity',nameHit).classed('sm-field',!nameHit&&fieldHit).classed('sm-none',!nameHit&&!fieldHit);
+      if (nameHit||btHit||fieldHit) matchedIds.add(d.id);
+      d3.select(this).classed('sm-entity', nameHit||btHit).classed('sm-field', !nameHit&&!btHit&&fieldHit).classed('sm-none', !nameHit&&!btHit&&!fieldHit);
       d3.select(this).selectAll('text.fname').each(function(){
         const el=d3.select(this); el.classed('fhit',(el.attr('data-fname')||'').toLowerCase().includes(q));
       });
@@ -490,7 +534,7 @@
   function clearAllSearchInputs() {
     document.getElementById('search-text').value = '';
     document.getElementById('search-clear').style.display = 'none';
-    entityCombo.clear(); fieldCombo.clear();
+    entityCombo.clear(); fieldCombo.clear(); baseTableCombo.clear();
     clearAllSearchVisual();
     clearHighlight();
   }
@@ -503,7 +547,7 @@
     const lc=CARD_LABELS[d.leftCard], rc=CARD_LABELS[d.rightCard];
     document.getElementById('rt-card').textContent = (lc&&rc)?`${lc}  ·  ${rc}`:(lc||rc||'');
     const labelEl=document.getElementById('rt-label');
-    if (d.label) { labelEl.textContent=d.label; labelEl.style.display='block'; } else { labelEl.style.display='none'; }
+    if (d.label) { labelEl.textContent = formatConditions(d.label); labelEl.style.display='block'; } else { labelEl.style.display='none'; }
     const area=document.getElementById('canvas-area').getBoundingClientRect();
     const tip=document.getElementById('rel-tip'); tip.style.display='block';
     const tipW=tip.offsetWidth, tipH=tip.offsetHeight;
@@ -583,14 +627,16 @@
   }
 
   // ─── Populate dropdowns after render ─────────────────────────────────
-  let entityCombo, fieldCombo;
+  let entityCombo, fieldCombo, baseTableCombo;
 
   function populateDropdowns() {
     const entityNames = [...currentNodes].map(n=>n.id).sort((a,b)=>a.localeCompare(b));
     const fieldNames  = [...new Set(currentNodes.flatMap(n=>n.entity.fields.map(f=>f.name)))].sort((a,b)=>a.localeCompare(b));
+    const btNames     = [...new Set(currentNodes.filter(n=>n.entity.baseTable).map(n=>n.entity.baseTable))].sort((a,b)=>a.localeCompare(b));
     entityCombo.setItems(entityNames);
     fieldCombo.setItems(fieldNames);
-    entityCombo.clear(); fieldCombo.clear();
+    baseTableCombo.setItems(btNames);
+    entityCombo.clear(); fieldCombo.clear(); baseTableCombo.clear();
   }
 
   // ─── Hint ─────────────────────────────────────────────────────────────
@@ -620,14 +666,19 @@
 
   // Combo boxes
   entityCombo = makeCombo('entity-filter', 'entity-drop', name => {
-    searchText.value = ''; clearAllSearchVisual(); fieldCombo.clear();
+    searchText.value = ''; clearAllSearchVisual(); fieldCombo.clear(); baseTableCombo.clear();
     searchClear.style.display = 'block';
     highlightEntity(name);
   });
   fieldCombo = makeCombo('field-filter', 'field-drop', name => {
-    searchText.value = ''; clearAllSearchVisual(); entityCombo.clear();
+    searchText.value = ''; clearAllSearchVisual(); entityCombo.clear(); baseTableCombo.clear();
     searchClear.style.display = 'block';
     highlightByField(name);
+  });
+  baseTableCombo = makeCombo('basetable-filter', 'basetable-drop', name => {
+    searchText.value = ''; clearAllSearchVisual(); entityCombo.clear(); fieldCombo.clear();
+    searchClear.style.display = 'block';
+    highlightByBaseTable(name);
   });
 
   renderBtn.addEventListener('click', () => render(textarea.value));
@@ -640,7 +691,7 @@
   });
 
   searchText.addEventListener('input', e => {
-    entityCombo.clear(); fieldCombo.clear();
+    entityCombo.clear(); fieldCombo.clear(); baseTableCombo.clear();
     const q = e.target.value.trim();
     searchClear.style.display = q ? 'block' : 'none';
     applyTextSearch(q);
@@ -658,21 +709,23 @@
 
   // ─── Default example ──────────────────────────────────────────────────
   textarea.value = `erDiagram
-    CUSTOMER ||--o{ ORDER : "id = customer_id"
+    CUSTOMER ||--o{ ORDER : "id = customer_id AND is_active = true"
     ORDER ||--|{ ORDER_ITEM : "id = order_id"
     PRODUCT ||--o{ ORDER_ITEM : "id = product_id"
-    CATEGORY ||--o{ PRODUCT : "id = category_id"
+    CATEGORY ||--o{ PRODUCT : "id = category_id AND deleted_at IS NULL"
     CUSTOMER {
-        int            id            PK
+        int            id              PK
         varchar(100)   name
         varchar(255)   email
         varchar(20)    phone_number
+        customers      base_table_reference
     }
     ORDER {
         int    id            PK
         int    customer_id   FK
         date   placed_at
         string status
+        orders base_table_reference
     }
     ORDER_ITEM {
         int   id          PK
@@ -680,6 +733,7 @@
         int   product_id  FK
         int   quantity
         float unit_price
+        order_items base_table_reference
     }
     PRODUCT {
         int           id           PK
@@ -687,6 +741,7 @@
         varchar(200)  name
         float         price
         int           stock_count
+        products      base_table_reference
     }
     CATEGORY {
         int           id           PK
