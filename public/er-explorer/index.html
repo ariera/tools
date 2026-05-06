@@ -354,7 +354,10 @@
       .force('charge',  d3.forceManyBody().strength(-1000))
       .force('center',  d3.forceCenter(el.clientWidth/2, el.clientHeight/2))
       .force('collide', d3.forceCollide(d=>Math.max(d.width/2,d.height/2)+30))
-      .on('tick', () => updatePositions(false));
+      .velocityDecay(0.6)
+      .alphaDecay(0.04)
+      .on('tick', () => updatePositions(false))
+      .on('end',  () => currentNodes.forEach(n => { n.fx = n.x; n.fy = n.y; }));
   }
 
   // ─── Dagre layout ────────────────────────────────────────────────────
@@ -411,7 +414,7 @@
 
     nodeSel = ng.selectAll('.node').data(nodes, d=>d.id).join('g').attr('class','node').attr('data-id',d=>d.id)
       .call(d3.drag()
-        .on('start',(e,d)=>{ if(currentLayout==='force'&&simulation){if(!e.active)simulation.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;} })
+        .on('start',(e,d)=>{ if(currentLayout==='force'&&simulation){currentNodes.forEach(n=>{n.fx=null;n.fy=null;});if(!e.active)simulation.alphaTarget(0.1).restart();d.fx=d.x;d.fy=d.y;} })
         .on('drag', (e,d)=>{ if(currentLayout==='force'){d.fx=e.x;d.fy=e.y;}else{d.x=e.x;d.y=e.y;updatePositions(false);} })
         .on('end',  (e,d)=>{ if(currentLayout==='force'&&simulation){if(!e.active)simulation.alphaTarget(0);d.fx=null;d.fy=null;} })
       )
