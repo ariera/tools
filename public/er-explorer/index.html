@@ -8,147 +8,75 @@
   <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; height: 100vh; display: flex; flex-direction: column; background: #f0f0f3; color: #1d1d1f; overflow: hidden; }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      background: #f0f0f3;
-      color: #1d1d1f;
-      overflow: hidden;
-    }
-
-    nav {
-      font-size: 0.82rem;
-      padding: 0.45rem 1rem;
-      background: #fff;
-      border-bottom: 1px solid #e0e0e0;
-      flex-shrink: 0;
-      z-index: 20;
-    }
+    nav { font-size: 0.82rem; padding: 0.45rem 1rem; background: #fff; border-bottom: 1px solid #e0e0e0; flex-shrink: 0; z-index: 20; }
     nav a { color: #0066cc; text-decoration: none; }
     nav a:hover { text-decoration: underline; }
 
     #app { display: flex; flex: 1; overflow: hidden; }
 
     /* ── Sidebar ── */
-    #sidebar {
-      width: 270px;
-      min-width: 270px;
-      display: flex;
-      flex-direction: column;
-      background: #fff;
-      border-right: 1px solid #e0e0e0;
-      transition: width 0.2s, min-width 0.2s;
-      overflow: hidden;
-      z-index: 10;
-    }
+    #sidebar { width: 270px; min-width: 270px; display: flex; flex-direction: column; background: #fff; border-right: 1px solid #e0e0e0; transition: width 0.2s, min-width 0.2s; overflow: hidden; z-index: 10; }
     #sidebar.collapsed { width: 0; min-width: 0; }
-
-    #sidebar-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0.5rem 0.75rem;
-      border-bottom: 1px solid #ebebeb;
-      flex-shrink: 0;
-    }
+    #sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.75rem; border-bottom: 1px solid #ebebeb; flex-shrink: 0; }
     #sidebar-title { font-size: 0.75rem; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
-
-    #collapse-btn {
-      background: none; border: none; cursor: pointer;
-      color: #aaa; font-size: 0.9rem; padding: 2px 4px; line-height: 1;
-      flex-shrink: 0;
-    }
+    #collapse-btn { background: none; border: none; cursor: pointer; color: #aaa; font-size: 0.9rem; padding: 2px 4px; line-height: 1; flex-shrink: 0; }
     #collapse-btn:hover { color: #333; }
 
-    #sidebar-body {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      padding: 0.65rem;
-      gap: 0.6rem;
-      overflow: hidden;
-      min-width: 270px;
-    }
+    #sidebar-body { flex: 1; display: flex; flex-direction: column; padding: 0.65rem; gap: 0; overflow-y: auto; overflow-x: visible; min-width: 270px; }
 
-    .section-label {
-      font-size: 0.7rem;
-      font-weight: 700;
-      color: #999;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
+    /* ── Section headers ── */
+    .sec-head { display: flex; align-items: center; justify-content: space-between; padding: 0.35rem 0; }
+    .sec-label { font-size: 0.7rem; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: 0.06em; }
+    .sec-toggle { background: none; border: none; cursor: pointer; color: #bbb; font-size: 0.65rem; padding: 0 2px; line-height: 1; }
+    .sec-toggle:hover { color: #555; }
 
-    #erd-input {
-      flex: 1;
-      font-family: "SF Mono", Menlo, monospace;
-      font-size: 0.76rem;
-      line-height: 1.55;
-      border: 1px solid #d8d8d8;
-      border-radius: 6px;
-      padding: 0.55rem;
-      resize: none;
-      outline: none;
-      color: #1d1d1f;
-      background: #fafafa;
-      min-height: 80px;
-    }
+    /* ── Collapsible section body ── */
+    .sec-body { display: flex; flex-direction: column; gap: 0.35rem; overflow: hidden; max-height: 600px; transition: max-height 0.22s ease, opacity 0.18s; opacity: 1; }
+    .sec-body.closed { max-height: 0; opacity: 0; }
+
+    /* Sections separated by top border */
+    .sidebar-sec { padding: 0.3rem 0 0.55rem; }
+    .sidebar-sec + .sidebar-sec { border-top: 1px solid #f0f0f0; }
+
+    #erd-input { font-family: "SF Mono", Menlo, monospace; font-size: 0.76rem; line-height: 1.55; border: 1px solid #d8d8d8; border-radius: 6px; padding: 0.55rem; resize: none; outline: none; color: #1d1d1f; background: #fafafa; height: 190px; }
     #erd-input:focus { border-color: #0066cc; background: #fff; }
 
     .btn-row { display: flex; gap: 0.35rem; }
-
-    .btn {
-      padding: 0.3rem 0.65rem;
-      border-radius: 6px;
-      border: 1px solid #ccc;
-      font-size: 0.78rem;
-      cursor: pointer;
-      background: #f5f5f7;
-      color: #1d1d1f;
-      white-space: nowrap;
-    }
+    .btn { padding: 0.3rem 0.65rem; border-radius: 6px; border: 1px solid #ccc; font-size: 0.78rem; cursor: pointer; background: #f5f5f7; color: #1d1d1f; white-space: nowrap; }
     .btn:hover { background: #e8e8ea; }
     .btn.primary { background: #0066cc; color: #fff; border-color: #0066cc; }
     .btn.primary:hover { background: #005ab5; }
     .btn.active { background: #0066cc; color: #fff; border-color: #0066cc; }
-
     .file-btn { position: relative; overflow: hidden; }
     .file-btn input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; font-size: 0; }
 
-    #search-input {
-      width: 100%;
-      padding: 0.35rem 0.6rem;
-      border: 1px solid #d8d8d8;
-      border-radius: 6px;
-      font-size: 0.82rem;
-      outline: none;
-    }
-    #search-input:focus { border-color: #0066cc; }
-    #search-clear { display: none; margin-top: 0.25rem; font-size: 0.72rem; color: #0066cc; cursor: pointer; }
+    /* ── Search ── */
+    #search-section { flex: 1; }
+    .sub-label { font-size: 0.68rem; color: #bbb; letter-spacing: 0.03em; margin: 0.45rem 0 0.2rem; display: block; }
+
+    #search-text { width: 100%; padding: 0.35rem 0.6rem; border: 1px solid #d8d8d8; border-radius: 6px; font-size: 0.82rem; outline: none; }
+    #search-text:focus { border-color: #0066cc; }
+    #search-clear { display: none; font-size: 0.7rem; color: #0066cc; cursor: pointer; margin-top: 0.18rem; }
     #search-clear:hover { text-decoration: underline; }
 
-    #stats { font-size: 0.72rem; color: #aaa; }
+    /* ── Combo ── */
+    .combo { position: relative; }
+    .combo-input { width: 100%; padding: 0.32rem 0.6rem; border: 1px solid #d8d8d8; border-radius: 6px; font-size: 0.82rem; outline: none; }
+    .combo-input:focus { border-color: #0066cc; }
+    .combo-drop { position: fixed; background: #fff; border: 1px solid #ddd; border-radius: 7px; max-height: 160px; overflow-y: auto; z-index: 500; display: none; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+    .combo-drop.open { display: block; }
+    .combo-item { padding: 0.3rem 0.65rem; cursor: pointer; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .combo-item:hover { background: #f0f0f3; }
+    .combo-item mark { background: none; color: #0066cc; font-weight: 700; font-style: normal; }
+
+    #stats { font-size: 0.7rem; color: #bbb; padding: 0.4rem 0 0.1rem; }
 
     /* ── Canvas area ── */
     #canvas-area { flex: 1; position: relative; overflow: hidden; }
-
-    #expand-btn {
-      display: none;
-      position: absolute;
-      top: 0.6rem; left: 0.6rem;
-      z-index: 10;
-      background: #fff;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      padding: 0.28rem 0.55rem;
-      font-size: 0.78rem;
-      cursor: pointer;
-      color: #555;
-    }
+    #expand-btn { display: none; position: absolute; top: 0.6rem; left: 0.6rem; z-index: 10; background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: 0.28rem 0.55rem; font-size: 0.78rem; cursor: pointer; color: #555; }
     #expand-btn:hover { background: #f5f5f7; }
-
     svg#canvas { width: 100%; height: 100%; display: block; }
 
     /* ── Nodes ── */
@@ -157,52 +85,55 @@
     .node rect.header-fill { fill: #eaeff8; }
     .node line.div { stroke: #e0e0e0; stroke-width: 1; }
     .node text.ename { font-size: 12.5px; font-weight: 700; fill: #1a2848; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
-    .node text.ftype { font-size: 10.5px; fill: #888; font-family: "SF Mono", Menlo, monospace; dominant-baseline: central; pointer-events: none; }
+    .node text.ftype { font-size: 10.5px; fill: #999; font-family: "SF Mono", Menlo, monospace; dominant-baseline: central; pointer-events: none; }
     .node text.fname { font-size: 10.5px; fill: #333; dominant-baseline: central; pointer-events: none; }
-    .node text.fcon { font-size: 9.5px; fill: #aaa; font-style: italic; dominant-baseline: central; text-anchor: end; pointer-events: none; }
+    .node text.fcon  { font-size: 9.5px; fill: #bbb; font-style: italic; dominant-baseline: central; text-anchor: end; pointer-events: none; }
 
     /* ── Links ── */
-    .link line.edge { stroke: #bbb; stroke-width: 1.5; fill: none; }
+    .link { cursor: pointer; }
+    .link line.hit  { stroke: transparent; stroke-width: 14; }
+    .link line.edge { stroke: #bbb; stroke-width: 1.5; fill: none; pointer-events: none; }
     .link line.edge.dashed { stroke-dasharray: 5 3; }
-    .link text.lbl { font-size: 9.5px; fill: #aaa; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
-    .link .card line { stroke: #bbb; stroke-width: 1.5; }
-    .link .card circle { fill: #f0f0f3; stroke: #bbb; stroke-width: 1.5; }
+    .link text.lbl  { font-size: 9.5px; fill: #bbb; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+    .link .card line   { stroke: #bbb; stroke-width: 1.5; pointer-events: none; }
+    .link .card circle { fill: #f0f0f3; stroke: #bbb; stroke-width: 1.5; pointer-events: none; }
 
-    /* ── Highlight states ── */
+    /* ── Highlight: entity click ── */
     .node.selected rect.bg { stroke: #0066cc; stroke-width: 2.5; }
     .node.selected rect.header-fill { fill: #ccdff8; }
     .node.selected text.ename { fill: #004499; }
     .node.neighbour rect.bg { stroke: #80b8f0; stroke-width: 2; }
     .node.neighbour rect.header-fill { fill: #deeeff; }
     .node.dimmed { opacity: 0.15; pointer-events: none; }
-    .link.active line.edge { stroke: #0066cc; stroke-width: 2; }
-    .link.active .card line { stroke: #0066cc; }
-    .link.active .card circle { stroke: #0066cc; }
+    .link.hl-active line.edge { stroke: #0066cc; stroke-width: 2; }
+    .link.hl-active .card line, .link.hl-active .card circle { stroke: #0066cc; }
     .link.dimmed { opacity: 0.08; pointer-events: none; }
 
-    /* ── Search states ── */
-    .node.smatch rect.bg { stroke: #d08000; stroke-width: 2.5; }
-    .node.smatch rect.header-fill { fill: #fff2cc; }
-    .node.sfmatch rect.bg { stroke: #d08000; stroke-width: 1.5; stroke-dasharray: 4 2; }
-    .node.snone { opacity: 0.15; pointer-events: none; }
+    /* ── Highlight: rel tooltip ── */
+    .link.rel-sel line.edge { stroke: #0066cc; stroke-width: 2.5; }
+    .link.rel-sel .card line, .link.rel-sel .card circle { stroke: #0066cc; }
+
+    /* ── Search visual states ── */
+    .node.sm-entity rect.bg { stroke: #d08000; stroke-width: 2.5; }
+    .node.sm-entity rect.header-fill { fill: #fff2cc; }
+    .node.sm-field  rect.bg { stroke: #d08000; stroke-width: 1.5; stroke-dasharray: 4 2; }
+    .node.sm-none { opacity: 0.15; pointer-events: none; }
     .node text.fname.fhit { fill: #8a5200; font-weight: 700; }
+    .link.sm-match line.edge { stroke: #d08000; stroke-width: 2; }
+    .link.sm-match .card line, .link.sm-match .card circle { stroke: #d08000; }
+    .link.sm-none  { opacity: 0.08; pointer-events: none; }
+
+    /* ── Relationship tooltip ── */
+    #rel-tip { display: none; position: absolute; background: #fff; border: 1px solid #ddd; border-radius: 9px; padding: 0.65rem 0.8rem 0.7rem; box-shadow: 0 4px 20px rgba(0,0,0,0.13); max-width: 300px; min-width: 180px; z-index: 100; }
+    #rel-tip .rt-row1 { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
+    #rel-tip .rt-entities { font-size: 0.82rem; font-weight: 700; color: #1a2848; line-height: 1.3; }
+    #rel-tip .rt-close { background: none; border: none; cursor: pointer; color: #ccc; font-size: 1.1rem; line-height: 1; padding: 0; flex-shrink: 0; }
+    #rel-tip .rt-close:hover { color: #666; }
+    #rel-tip .rt-card { font-size: 0.72rem; color: #aaa; margin-top: 0.2rem; }
+    #rel-tip .rt-label { margin-top: 0.5rem; font-family: "SF Mono", Menlo, monospace; font-size: 0.78rem; color: #333; background: #f5f5f7; border-radius: 5px; padding: 0.35rem 0.55rem; word-break: break-all; line-height: 1.5; white-space: pre-wrap; }
 
     /* ── Hint ── */
-    #hint {
-      position: absolute;
-      bottom: 0.8rem;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.52);
-      color: #fff;
-      font-size: 0.7rem;
-      padding: 0.28rem 0.75rem;
-      border-radius: 999px;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.3s;
-      white-space: nowrap;
-    }
+    #hint { position: absolute; bottom: 0.8rem; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.52); color: #fff; font-size: 0.7rem; padding: 0.28rem 0.75rem; border-radius: 999px; pointer-events: none; opacity: 0; transition: opacity 0.3s; white-space: nowrap; }
     #hint.on { opacity: 1; }
   </style>
 </head>
@@ -216,30 +147,49 @@
     </div>
     <div id="sidebar-body">
 
-      <div style="display:flex;flex-direction:column;gap:0.3rem;flex:1;overflow:hidden">
-        <span class="section-label">Diagram</span>
-        <textarea id="erd-input" spellcheck="false"></textarea>
-        <div class="btn-row">
-          <button class="btn file-btn">
-            Load file
-            <input type="file" id="file-input" accept=".mmd,.txt,.md">
-          </button>
-          <button class="btn primary" id="render-btn">Render</button>
+      <!-- Diagram (collapsible) -->
+      <div class="sidebar-sec">
+        <div class="sec-head">
+          <span class="sec-label">Diagram</span>
+          <button class="sec-toggle" id="diagram-toggle" title="Collapse">▼</button>
+        </div>
+        <div class="sec-body" id="diagram-body">
+          <textarea id="erd-input" spellcheck="false"></textarea>
+          <div class="btn-row">
+            <button class="btn file-btn">Load file<input type="file" id="file-input" accept=".mmd,.txt,.md"></button>
+            <button class="btn primary" id="render-btn">Render</button>
+          </div>
         </div>
       </div>
 
-      <div style="display:flex;flex-direction:column;gap:0.3rem">
-        <span class="section-label">Layout</span>
+      <!-- Layout -->
+      <div class="sidebar-sec">
+        <div class="sec-head"><span class="sec-label">Layout</span></div>
         <div class="btn-row">
           <button class="btn active" id="btn-force">Force</button>
           <button class="btn" id="btn-dagre">Hierarchical</button>
         </div>
       </div>
 
-      <div style="display:flex;flex-direction:column;gap:0.3rem">
-        <span class="section-label">Search</span>
-        <input type="text" id="search-input" placeholder="Entity or field name…">
-        <span id="search-clear">Clear search</span>
+      <!-- Search -->
+      <div class="sidebar-sec" id="search-section">
+        <div class="sec-head"><span class="sec-label">Search</span></div>
+
+        <span class="sub-label">Free text</span>
+        <input type="text" id="search-text" placeholder="Entity, field, or type…">
+        <span id="search-clear">Clear all searches</span>
+
+        <span class="sub-label">Entity</span>
+        <div class="combo" id="entity-combo">
+          <input type="text" class="combo-input" id="entity-filter" placeholder="Filter entities…" autocomplete="off">
+          <div class="combo-drop" id="entity-drop"></div>
+        </div>
+
+        <span class="sub-label">Field name</span>
+        <div class="combo" id="field-combo">
+          <input type="text" class="combo-input" id="field-filter" placeholder="Filter fields…" autocomplete="off">
+          <div class="combo-drop" id="field-drop"></div>
+        </div>
       </div>
 
       <span id="stats"></span>
@@ -249,6 +199,14 @@
   <div id="canvas-area">
     <button id="expand-btn">▶ Edit</button>
     <svg id="canvas"></svg>
+    <div id="rel-tip">
+      <div class="rt-row1">
+        <span class="rt-entities" id="rt-entities"></span>
+        <button class="rt-close" id="rt-close">×</button>
+      </div>
+      <div class="rt-card" id="rt-card"></div>
+      <div class="rt-label" id="rt-label"></div>
+    </div>
     <div id="hint"></div>
   </div>
 </div>
@@ -256,137 +214,108 @@
 <script>
 (() => {
   // ─── Constants ───────────────────────────────────────────────────────
-  const NW = 200;          // node width
-  const NH = 34;           // header height
-  const FH = 22;           // field row height
-  const FX = 10;           // field left padding
-  const TYPE_W = 54;       // type column width
-  const BOTTOM_PAD = 8;    // bottom padding below last field
+  const MIN_W = 160, MAX_W = 480;
+  const NH = 34, FH = 22, FX = 10, COL_GAP = 10, BOTTOM_PAD = 8;
+
+  // ─── Canvas text measurement ──────────────────────────────────────────
+  let _mctx = null;
+  const mc = () => { if (!_mctx) _mctx = document.createElement('canvas').getContext('2d'); return _mctx; };
+  const tw = (text, font) => { mc().font = font; return mc().measureText(text).width; };
+  const F_ENAME = 'bold 12.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  const F_TYPE  = '10.5px "SF Mono", Menlo, monospace';
+  const F_FNAME = '10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  const F_CON   = 'italic 9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+  function nodeDims(name, entity) {
+    const headerW = FX * 2 + 20 + tw(name, F_ENAME);
+    let maxTypeW = 0, maxNameW = 0, maxConW = 0;
+    for (const f of entity.fields) {
+      maxTypeW = Math.max(maxTypeW, tw(f.type, F_TYPE));
+      maxNameW = Math.max(maxNameW, tw(f.name, F_FNAME));
+      if (f.con) maxConW = Math.max(maxConW, tw(f.con, F_CON));
+    }
+    const typeColX = FX + maxTypeW + COL_GAP;
+    const fieldsW  = typeColX + maxNameW + (maxConW > 0 ? COL_GAP + maxConW : 0) + FX;
+    const width    = Math.max(MIN_W, Math.min(MAX_W, Math.max(headerW, entity.fields.length ? fieldsW : 0)));
+    return { width, typeColX };
+  }
+  const nodeH = e => NH + e.fields.length * FH + BOTTOM_PAD;
 
   // ─── State ────────────────────────────────────────────────────────────
-  let simulation = null;
-  let linkSel = null;
-  let nodeSel = null;
-  let currentNodes = [];
-  let currentLinks = [];
-  let selectedEntity = null;
-  let currentLayout = 'force';  // 'force' | 'dagre'
-  let svgSelection = null;
-  let rootG = null;
+  let simulation   = null, linkSel = null, nodeSel = null;
+  let currentNodes = [], currentLinks = [];
+  let selectedEntity = null, currentLayout = 'force';
 
   // ─── Utilities ───────────────────────────────────────────────────────
   const safeId = s => 'n' + s.replace(/[^a-zA-Z0-9]/g, '_');
 
-  function nodeH(entity) {
-    return NH + entity.fields.length * FH + BOTTOM_PAD;
-  }
-
-  // Intersection of line (cx,cy)→(tx,ty) with rect border centred at (cx,cy)
   function borderPt(cx, cy, tx, ty, w, h) {
     const dx = tx - cx, dy = ty - cy;
     if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return { x: cx, y: cy };
-    const sx = Math.abs(dx) > 1e-6 ? (w / 2) / Math.abs(dx) : Infinity;
-    const sy = Math.abs(dy) > 1e-6 ? (h / 2) / Math.abs(dy) : Infinity;
-    const t  = Math.min(sx, sy);
-    return { x: cx + dx * t, y: cy + dy * t };
+    const t = Math.min(Math.abs(dx) > 1e-6 ? w/2/Math.abs(dx) : Infinity, Math.abs(dy) > 1e-6 ? h/2/Math.abs(dy) : Infinity);
+    return { x: cx + dx*t, y: cy + dy*t };
   }
 
   // ─── Parser ───────────────────────────────────────────────────────────
   function parseERD(text) {
-    const entities = {};
-    const rels = [];
-    let cur = null;
-
+    const entities = {}, rels = []; let cur = null;
     for (const raw of text.split('\n')) {
       const line = raw.trim();
       if (!line || line === 'erDiagram' || line.startsWith('%%')) continue;
-
       const eOpen = line.match(/^([A-Za-z_][\w-]*)\s*\{$/);
       if (eOpen) { cur = eOpen[1]; if (!entities[cur]) entities[cur] = { fields: [] }; continue; }
       if (line === '}') { cur = null; continue; }
-
       if (cur) {
         const fm = line.match(/^(\S+)\s+(\S+)(?:\s+(.+))?$/);
         if (fm) entities[cur].fields.push({ type: fm[1], name: fm[2], con: fm[3]?.trim().replace(/"/g, '') || null });
         continue;
       }
-
       const rm = line.match(/^([A-Za-z_][\w-]*)\s+([|o}{]+[-.]+[|o}{]+)\s+([A-Za-z_][\w-]*)\s*:\s*"?([^"]*)"?$/);
       if (rm) {
         const [, from, rel, to, label] = rm;
         if (!entities[from]) entities[from] = { fields: [] };
-        if (!entities[to]) entities[to] = { fields: [] };
+        if (!entities[to])   entities[to]   = { fields: [] };
         const m = rel.match(/^([|o}{]+)[-.]+([|o}{]+)$/);
-        rels.push({
-          from, to, label: label.trim(),
-          leftCard:  m ? normCard(m[1]) : null,
-          rightCard: m ? normCard(m[2]) : null,
-          dashed: rel.includes('..'),
-        });
+        rels.push({ from, to, label: label.trim(), leftCard: m ? normCard(m[1]) : null, rightCard: m ? normCard(m[2]) : null, dashed: rel.includes('..') });
       }
     }
     return { entities, rels };
   }
-
   function normCard(s) {
-    if (s === '||')                return 'one_only';
-    if (s === '|o' || s === 'o|') return 'zero_or_one';
-    if (s === 'o{' || s === '}o') return 'zero_or_many';
-    if (s === '|{' || s === '}|') return 'one_or_many';
-    if (s === '}{' || s === '{}') return 'many';
-    if (s === '|')                 return 'one';
-    if (s === 'o')                 return 'zero';
+    if (s==='||') return 'one_only'; if (s==='|o'||s==='o|') return 'zero_or_one';
+    if (s==='o{'||s==='}o') return 'zero_or_many'; if (s==='|{'||s==='}|') return 'one_or_many';
+    if (s==='}{'||s==='{}') return 'many'; if (s==='|') return 'one'; if (s==='o') return 'zero';
     return null;
   }
+  const CARD_LABELS = { one_only:'exactly one', one:'one', zero_or_one:'zero or one', zero:'zero', many:'many', one_or_many:'one or many', zero_or_many:'zero or many' };
 
   // ─── Cardinality markers ──────────────────────────────────────────────
   function drawCard(parent, x, y, tx, ty, card) {
     if (!card) return;
-    const dx = tx - x, dy = ty - y;
-    const d = Math.sqrt(dx*dx + dy*dy);
-    if (d < 1) return;
-    const ux = dx/d, uy = dy/d;
-    const px = -uy, py = ux;
-    const T=8, D1=9, D2=18, CF=7;
-
-    const g = parent.append('g').attr('class', 'card');
-    const tick = dist => g.append('line')
-      .attr('x1', x+ux*dist - px*T).attr('y1', y+uy*dist - py*T)
-      .attr('x2', x+ux*dist + px*T).attr('y2', y+uy*dist + py*T);
-    const dot = dist => g.append('circle').attr('cx', x+ux*dist).attr('cy', y+uy*dist).attr('r', 4);
-    const fork = dist => {
-      const bx = x+ux*dist, by = y+uy*dist;
-      g.append('line').attr('x1',x).attr('y1',y).attr('x2', bx+px*CF).attr('y2', by+py*CF);
-      g.append('line').attr('x1',x).attr('y1',y).attr('x2', bx-px*CF).attr('y2', by-py*CF);
-      g.append('line').attr('x1',x).attr('y1',y).attr('x2', bx       ).attr('y2', by       );
-    };
-
-    if      (card === 'one_only')     { tick(D1); tick(D2); }
-    else if (card === 'one')          { tick(D1); }
-    else if (card === 'zero_or_one')  { dot(D1); tick(D2); }
-    else if (card === 'zero')         { dot(D1); }
-    else if (card === 'many')         { fork(D2); }
-    else if (card === 'one_or_many')  { tick(D2); fork(D1); }
-    else if (card === 'zero_or_many') { dot(D2); fork(D1); }
+    const dx=tx-x, dy=ty-y, d=Math.sqrt(dx*dx+dy*dy); if (d<1) return;
+    const ux=dx/d, uy=dy/d, px=-uy, py=ux, T=8, D1=9, D2=18, CF=7;
+    const g = parent.append('g').attr('class','card');
+    const tick = dist => g.append('line').attr('x1',x+ux*dist-px*T).attr('y1',y+uy*dist-py*T).attr('x2',x+ux*dist+px*T).attr('y2',y+uy*dist+py*T);
+    const dot  = dist => g.append('circle').attr('cx',x+ux*dist).attr('cy',y+uy*dist).attr('r',4);
+    const fork = dist => { const bx=x+ux*dist,by=y+uy*dist; g.append('line').attr('x1',x).attr('y1',y).attr('x2',bx+px*CF).attr('y2',by+py*CF); g.append('line').attr('x1',x).attr('y1',y).attr('x2',bx-px*CF).attr('y2',by-py*CF); g.append('line').attr('x1',x).attr('y1',y).attr('x2',bx).attr('y2',by); };
+    if      (card==='one_only')     { tick(D1); tick(D2); }
+    else if (card==='one')          { tick(D1); }
+    else if (card==='zero_or_one')  { dot(D1); tick(D2); }
+    else if (card==='zero')         { dot(D1); }
+    else if (card==='many')         { fork(D2); }
+    else if (card==='one_or_many')  { tick(D2); fork(D1); }
+    else if (card==='zero_or_many') { dot(D2); fork(D1); }
   }
 
-  // ─── Render / update positions ────────────────────────────────────────
-  function updatePositions(transition) {
-    const upd = (sel) => transition ? sel.transition().duration(500) : sel;
-
-    upd(nodeSel).attr('transform', d => `translate(${d.x - NW/2},${d.y - d.height/2})`);
-
-    // Update links (no transition on lines; redraw cardinality after settle)
+  // ─── Position update ──────────────────────────────────────────────────
+  function updatePositions(doTransition) {
+    const upd = sel => doTransition ? sel.transition().duration(500) : sel;
+    upd(nodeSel).attr('transform', d => `translate(${d.x - d.width/2},${d.y - d.height/2})`);
     linkSel.each(function(d) {
-      const sx = typeof d.source === 'object' ? d.source.x : 0;
-      const sy = typeof d.source === 'object' ? d.source.y : 0;
-      const tx = typeof d.target === 'object' ? d.target.x : 0;
-      const ty = typeof d.target === 'object' ? d.target.y : 0;
-      const sh = typeof d.source === 'object' ? d.source.height : NW;
-      const th = typeof d.target === 'object' ? d.target.height : NW;
-      const s = borderPt(sx, sy, tx, ty, NW, sh);
-      const t = borderPt(tx, ty, sx, sy, NW, th);
+      const s = borderPt(d.source.x, d.source.y, d.target.x, d.target.y, d.source.width, d.source.height);
+      const t = borderPt(d.target.x, d.target.y, d.source.x, d.source.y, d.target.width, d.target.height);
       const g = d3.select(this);
+      g.select('line.hit').attr('x1',s.x).attr('y1',s.y).attr('x2',t.x).attr('y2',t.y);
       g.select('line.edge').attr('x1',s.x).attr('y1',s.y).attr('x2',t.x).attr('y2',t.y);
       g.select('text.lbl').attr('x',(s.x+t.x)/2).attr('y',(s.y+t.y)/2 - 7);
       g.selectAll('.card').remove();
@@ -395,259 +324,293 @@
     });
   }
 
-  // ─── Force layout ─────────────────────────────────────────────────────
+  // ─── Force layout ────────────────────────────────────────────────────
   function startForce(nodes, links) {
-    const svg = document.getElementById('canvas');
-    const W = svg.clientWidth, H = svg.clientHeight;
-
+    const el = document.getElementById('canvas');
     if (simulation) simulation.stop();
-
     simulation = d3.forceSimulation(nodes)
-      .force('link',    d3.forceLink(links).id(d => d.id).distance(300).strength(0.5))
-      .force('charge',  d3.forceManyBody().strength(-900))
-      .force('center',  d3.forceCenter(W/2, H/2))
-      .force('collide', d3.forceCollide(d => Math.max(NW/2, d.height/2) + 30))
+      .force('link',    d3.forceLink(links).id(d=>d.id).distance(320).strength(0.5))
+      .force('charge',  d3.forceManyBody().strength(-1000))
+      .force('center',  d3.forceCenter(el.clientWidth/2, el.clientHeight/2))
+      .force('collide', d3.forceCollide(d=>Math.max(d.width/2,d.height/2)+30))
       .on('tick', () => updatePositions(false));
   }
 
-  // ─── Dagre layout ─────────────────────────────────────────────────────
+  // ─── Dagre layout ────────────────────────────────────────────────────
   function applyDagre(nodes, links) {
     const g = new dagre.graphlib.Graph();
-    g.setGraph({ rankdir: 'LR', nodesep: 50, ranksep: 100, marginx: 60, marginy: 60 });
+    g.setGraph({ rankdir:'LR', nodesep:50, ranksep:120, marginx:60, marginy:60 });
     g.setDefaultEdgeLabel(() => ({}));
-
-    nodes.forEach(n => g.setNode(n.id, { width: NW, height: n.height }));
-    links.forEach(l => {
-      const from = typeof l.source === 'object' ? l.source.id : l.source;
-      const to   = typeof l.target === 'object' ? l.target.id : l.target;
-      g.setEdge(from, to);
-    });
-
+    nodes.forEach(n => g.setNode(n.id, { width:n.width, height:n.height }));
+    links.forEach(l => g.setEdge(l.source.id, l.target.id));
     dagre.layout(g);
-
-    nodes.forEach(n => {
-      const pos = g.node(n.id);
-      n.x = pos.x;
-      n.y = pos.y;
-    });
+    nodes.forEach(n => { const p=g.node(n.id); n.x=p.x; n.y=p.y; });
   }
 
-  // ─── Main render ──────────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────────────────
   function render(text) {
     const parsed = parseERD(text);
     const names = Object.keys(parsed.entities);
-    if (!names.length) {
-      document.getElementById('stats').textContent = 'No entities found.';
-      return;
-    }
+    if (!names.length) { document.getElementById('stats').textContent = 'No entities found.'; return; }
 
     if (simulation) { simulation.stop(); simulation = null; }
+    closeRelTip(); clearAllSearchVisual();
 
     const svg = d3.select('#canvas');
     svg.selectAll('*').remove();
-
     const W = svg.node().clientWidth, H = svg.node().clientHeight;
 
-    // Build data
-    const nodes = names.map(name => ({
-      id: name,
-      entity: parsed.entities[name],
-      height: nodeH(parsed.entities[name]),
-      x: W/2 + (Math.random()-0.5)*200,
-      y: H/2 + (Math.random()-0.5)*200,
-    }));
-    const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n]));
-    const links = parsed.rels.map(r => ({ ...r, source: r.from, target: r.to }));
-
-    currentNodes = nodes;
-    currentLinks = links;
-    selectedEntity = null;
-
-    // ── SVG defs ──
-    const defs = svg.append('defs');
-    const f = defs.append('filter').attr('id','shadow').attr('x','-15%').attr('y','-15%').attr('width','130%').attr('height','130%');
-    f.append('feDropShadow').attr('dx',0).attr('dy',2).attr('stdDeviation',3).attr('flood-color','rgba(0,0,0,0.10)');
-
-    // Clip paths for entity headers
-    nodes.forEach(n => {
-      defs.append('clipPath').attr('id', safeId(n.id)+'-hclip')
-        .append('rect').attr('width', NW).attr('height', NH);
+    const nodes = names.map(name => {
+      const entity = parsed.entities[name];
+      const { width, typeColX } = nodeDims(name, entity);
+      return { id:name, entity, height:nodeH(entity), width, typeColX, x:W/2+(Math.random()-0.5)*200, y:H/2+(Math.random()-0.5)*200 };
     });
+    const nodeById = Object.fromEntries(nodes.map(n=>[n.id,n]));
+    const links = parsed.rels.map(r => ({ ...r, source:nodeById[r.from]||r.from, target:nodeById[r.to]||r.to }));
 
-    // ── Structure ──
+    currentNodes = nodes; currentLinks = links; selectedEntity = null;
+
+    const defs = svg.append('defs');
+    const flt = defs.append('filter').attr('id','shadow').attr('x','-15%').attr('y','-15%').attr('width','130%').attr('height','130%');
+    flt.append('feDropShadow').attr('dx',0).attr('dy',2).attr('stdDeviation',3).attr('flood-color','rgba(0,0,0,0.10)');
+    nodes.forEach(n => defs.append('clipPath').attr('id',safeId(n.id)+'-hclip').append('rect').attr('width',n.width).attr('height',NH));
+
     const root = svg.append('g').attr('id','root');
-    rootG = root;
     const lg = root.append('g').attr('id','links');
     const ng = root.append('g').attr('id','nodes');
 
-    // ── Zoom ──
     const zoom = d3.zoom().scaleExtent([0.06,5]).on('zoom', e => root.attr('transform', e.transform));
     svg.call(zoom).on('dblclick.zoom', null);
-    svg.on('click', e => { if (!e.target.closest('.node')) clearHighlight(); });
+    svg.on('click', e => { if (!e.target.closest('.node') && !e.target.closest('.link')) { clearHighlight(); closeRelTip(); } });
 
-    // ── Links ──
-    linkSel = lg.selectAll('.link')
-      .data(links)
-      .join('g').attr('class','link');
-    linkSel.append('line').attr('class', d => 'edge' + (d.dashed ? ' dashed' : ''));
-    linkSel.append('text').attr('class','lbl');
+    linkSel = lg.selectAll('.link').data(links).join('g').attr('class','link');
+    linkSel.append('line').attr('class','hit');
+    linkSel.append('line').attr('class', d => 'edge'+(d.dashed?' dashed':''));
+    linkSel.append('text').attr('class','lbl').text(d => d.label.length<=24 ? d.label : d.label.slice(0,22)+'…');
+    linkSel.on('click', (e,d) => { e.stopPropagation(); openRelTip(e,d); });
 
-    // ── Nodes ──
-    nodeSel = ng.selectAll('.node')
-      .data(nodes, d => d.id)
-      .join('g').attr('class','node').attr('data-id', d => d.id)
+    nodeSel = ng.selectAll('.node').data(nodes, d=>d.id).join('g').attr('class','node').attr('data-id',d=>d.id)
       .call(d3.drag()
-        .on('start', (e,d) => {
-          if (currentLayout === 'force' && simulation) { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; }
-        })
-        .on('drag', (e,d) => {
-          if (currentLayout === 'force') { d.fx=e.x; d.fy=e.y; }
-          else { d.x=e.x; d.y=e.y; updatePositions(false); }
-        })
-        .on('end', (e,d) => {
-          if (currentLayout === 'force' && simulation) { if (!e.active) simulation.alphaTarget(0); d.fx=null; d.fy=null; }
-        })
+        .on('start',(e,d)=>{ if(currentLayout==='force'&&simulation){if(!e.active)simulation.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;} })
+        .on('drag', (e,d)=>{ if(currentLayout==='force'){d.fx=e.x;d.fy=e.y;}else{d.x=e.x;d.y=e.y;updatePositions(false);} })
+        .on('end',  (e,d)=>{ if(currentLayout==='force'&&simulation){if(!e.active)simulation.alphaTarget(0);d.fx=null;d.fy=null;} })
       )
-      .on('click', (e,d) => { e.stopPropagation(); selectedEntity===d.id ? clearHighlight() : highlightEntity(d.id); });
+      .on('click', (e,d) => { e.stopPropagation(); closeRelTip(); selectedEntity===d.id ? clearHighlight() : highlightEntity(d.id); });
 
-    // Background rect (rounded, full height)
-    nodeSel.append('rect').attr('class','bg').attr('width',NW).attr('height',d=>d.height).attr('rx',7).attr('ry',7).style('filter','url(#shadow)');
-
-    // Header fill — same rounded rect, clipped to header height
-    nodeSel.append('rect').attr('class','header-fill')
-      .attr('width',NW).attr('height',d=>d.height)
-      .attr('rx',7).attr('ry',7)
-      .attr('clip-path', d => `url(#${safeId(d.id)}-hclip)`);
-
-    // Divider line
-    nodeSel.filter(d => d.entity.fields.length > 0)
-      .append('line').attr('class','div').attr('x1',0).attr('y1',NH).attr('x2',NW).attr('y2',NH);
-
-    // Entity name
-    nodeSel.append('text').attr('class','ename').attr('x',NW/2).attr('y',NH/2).text(d=>d.id);
-
-    // Fields
+    nodeSel.append('rect').attr('class','bg').attr('width',d=>d.width).attr('height',d=>d.height).attr('rx',7).attr('ry',7).style('filter','url(#shadow)');
+    nodeSel.append('rect').attr('class','header-fill').attr('width',d=>d.width).attr('height',d=>d.height).attr('rx',7).attr('ry',7).attr('clip-path',d=>`url(#${safeId(d.id)}-hclip)`);
+    nodeSel.filter(d=>d.entity.fields.length>0).append('line').attr('class','div').attr('x1',0).attr('y1',NH).attr('x2',d=>d.width).attr('y2',NH);
+    nodeSel.append('text').attr('class','ename').attr('x',d=>d.width/2).attr('y',NH/2).text(d=>d.id);
     nodeSel.each(function(d) {
       const g = d3.select(this);
       d.entity.fields.forEach((f,i) => {
         const y = NH + i*FH + FH/2;
         g.append('text').attr('class','ftype').attr('x',FX).attr('y',y).text(f.type);
-        g.append('text').attr('class','fname').attr('x',FX+TYPE_W).attr('y',y).attr('data-fname',f.name).text(f.name);
-        if (f.con) g.append('text').attr('class','fcon').attr('x',NW-FX).attr('y',y).text(f.con);
+        g.append('text').attr('class','fname').attr('x',d.typeColX).attr('y',y).attr('data-fname',f.name).text(f.name);
+        if (f.con) g.append('text').attr('class','fcon').attr('x',d.width-FX).attr('y',y).text(f.con);
       });
     });
 
-    document.getElementById('stats').textContent =
-      `${names.length} entities · ${links.length} relationships`;
-    document.getElementById('search-input').value = '';
-    clearSearch();
-    clearHighlight();
+    document.getElementById('stats').textContent = `${names.length} entities · ${links.length} relationships`;
+    populateDropdowns();
 
-    // ── Run layout ──
-    if (currentLayout === 'force') {
-      startForce(nodes, links);
-    } else {
-      applyDagre(nodes, links);
-      updatePositions(false);
-    }
+    if (currentLayout==='force') startForce(nodes, links);
+    else { applyDagre(nodes, links); updatePositions(false); }
   }
 
-  // ─── Switch layout ────────────────────────────────────────────────────
+  // ─── Layout switch ────────────────────────────────────────────────────
   function switchLayout(to) {
-    if (!currentNodes.length) { currentLayout = to; return; }
     currentLayout = to;
-
-    if (to === 'force') {
-      startForce(currentNodes, currentLinks);
-    } else {
-      if (simulation) { simulation.stop(); simulation = null; }
-      applyDagre(currentNodes, currentLinks);
-      updatePositions(true);
-    }
+    if (!currentNodes.length) return;
+    if (to==='force') startForce(currentNodes, currentLinks);
+    else { if (simulation){simulation.stop();simulation=null;} applyDagre(currentNodes,currentLinks); updatePositions(true); }
   }
 
-  // ─── Highlight ────────────────────────────────────────────────────────
+  // ─── Entity highlight (click / entity-dropdown) ───────────────────────
   function highlightEntity(name) {
+    clearAllSearchVisual();
     selectedEntity = name;
-    const nbrs = new Set();
-    const activeLinkIdx = new Set();
-
-    currentLinks.forEach((l, i) => {
-      const from = typeof l.source === 'object' ? l.source.id : l.source;
-      const to   = typeof l.target === 'object' ? l.target.id : l.target;
-      if (from === name || to === name) {
-        activeLinkIdx.add(i);
-        nbrs.add(from === name ? to : from);
-      }
+    const nbrs = new Set(), activeIdx = new Set();
+    currentLinks.forEach((l,i) => {
+      const from=l.source.id, to=l.target.id;
+      if (from===name||to===name) { activeIdx.add(i); nbrs.add(from===name?to:from); }
     });
-
-    nodeSel
-      .classed('selected',  d => d.id === name)
-      .classed('neighbour', d => d.id !== name && nbrs.has(d.id))
-      .classed('dimmed',    d => d.id !== name && !nbrs.has(d.id));
-
-    linkSel
-      .classed('active', (_,i) => activeLinkIdx.has(i))
-      .classed('dimmed',  (_,i) => !activeLinkIdx.has(i));
-
+    nodeSel.classed('selected',d=>d.id===name).classed('neighbour',d=>d.id!==name&&nbrs.has(d.id)).classed('dimmed',d=>d.id!==name&&!nbrs.has(d.id));
+    linkSel.classed('hl-active',(_,i)=>activeIdx.has(i)).classed('dimmed',(_,i)=>!activeIdx.has(i));
     hint('Click entity again or background to clear');
+  }
+
+  // ─── Field highlight (field-dropdown) ────────────────────────────────
+  function highlightByField(fieldName) {
+    clearAllSearchVisual();
+    selectedEntity = null;
+    const matchedIds = new Set(currentNodes.filter(n=>n.entity.fields.some(f=>f.name.toLowerCase()===fieldName.toLowerCase())).map(n=>n.id));
+    nodeSel.classed('selected',d=>matchedIds.has(d.id)).classed('dimmed',d=>!matchedIds.has(d.id)).classed('neighbour',false);
+    const activeIdx = new Set();
+    currentLinks.forEach((l,i)=>{ if(matchedIds.has(l.source.id)||matchedIds.has(l.target.id)) activeIdx.add(i); });
+    linkSel.classed('hl-active',(_,i)=>activeIdx.has(i)).classed('dimmed',(_,i)=>!activeIdx.has(i));
+    hint(`Showing all entities with field "${fieldName}"`);
   }
 
   function clearHighlight() {
     selectedEntity = null;
     if (nodeSel) nodeSel.classed('selected neighbour dimmed', false);
-    if (linkSel) linkSel.classed('active dimmed', false);
+    if (linkSel) linkSel.classed('hl-active dimmed', false);
     clearHint();
   }
 
-  // ─── Search ───────────────────────────────────────────────────────────
-  function applySearch(q) {
+  // ─── Text search ──────────────────────────────────────────────────────
+  function applyTextSearch(q) {
     q = q.trim().toLowerCase();
-    if (!q) { clearSearch(); return; }
-    document.getElementById('search-clear').style.display = 'block';
+    if (!q) { clearAllSearchVisual(); return; }
+    clearHighlight();
+    const matchedIds = new Set();
 
     nodeSel.each(function(d) {
-      const nameHit = d.id.toLowerCase().includes(q);
-      const fieldHits = d.entity.fields.filter(f =>
-        f.name.toLowerCase().includes(q) || f.type.toLowerCase().includes(q)
-      );
-      const anyHit = nameHit || fieldHits.length > 0;
-
-      d3.select(this)
-        .classed('smatch',  nameHit && !fieldHits.length)
-        .classed('sfmatch', !nameHit && fieldHits.length > 0)
-        .classed('smatch',  nameHit)
-        .classed('snone',   !anyHit);
-
-      d3.select(this).selectAll('text.fname').each(function() {
-        const el = d3.select(this);
-        const fn = el.attr('data-fname') || '';
-        el.classed('fhit', fn.toLowerCase().includes(q));
+      const nameHit  = d.id.toLowerCase().includes(q);
+      const fieldHit = d.entity.fields.some(f=>f.name.toLowerCase().includes(q)||f.type.toLowerCase().includes(q));
+      if (nameHit||fieldHit) matchedIds.add(d.id);
+      d3.select(this).classed('sm-entity',nameHit).classed('sm-field',!nameHit&&fieldHit).classed('sm-none',!nameHit&&!fieldHit);
+      d3.select(this).selectAll('text.fname').each(function(){
+        const el=d3.select(this); el.classed('fhit',(el.attr('data-fname')||'').toLowerCase().includes(q));
       });
+    });
+
+    linkSel.each(function(d) {
+      const fromHit=matchedIds.has(d.source.id), toHit=matchedIds.has(d.target.id);
+      d3.select(this).classed('sm-match',fromHit||toHit).classed('sm-none',!fromHit&&!toHit);
     });
   }
 
-  function clearSearch() {
+  function clearAllSearchVisual() {
+    if (nodeSel) { nodeSel.classed('sm-entity sm-field sm-none',false); nodeSel.selectAll('text.fname').classed('fhit',false); }
+    if (linkSel) linkSel.classed('sm-match sm-none',false);
+  }
+
+  function clearAllSearchInputs() {
+    document.getElementById('search-text').value = '';
     document.getElementById('search-clear').style.display = 'none';
-    if (!nodeSel) return;
-    nodeSel.classed('smatch sfmatch snone', false);
-    nodeSel.selectAll('text.fname').classed('fhit', false);
+    entityCombo.clear(); fieldCombo.clear();
+    clearAllSearchVisual();
+    clearHighlight();
+  }
+
+  // ─── Relationship tooltip ─────────────────────────────────────────────
+  function openRelTip(event, d) {
+    closeRelTip();
+    linkSel.classed('rel-sel', l => l===d);
+    document.getElementById('rt-entities').textContent = `${d.source.id} → ${d.target.id}`;
+    const lc=CARD_LABELS[d.leftCard], rc=CARD_LABELS[d.rightCard];
+    document.getElementById('rt-card').textContent = (lc&&rc)?`${lc}  ·  ${rc}`:(lc||rc||'');
+    const labelEl=document.getElementById('rt-label');
+    if (d.label) { labelEl.textContent=d.label; labelEl.style.display='block'; } else { labelEl.style.display='none'; }
+    const area=document.getElementById('canvas-area').getBoundingClientRect();
+    const tip=document.getElementById('rel-tip'); tip.style.display='block';
+    const tipW=tip.offsetWidth, tipH=tip.offsetHeight;
+    let x=event.clientX-area.left+14, y=event.clientY-area.top-10;
+    if (x+tipW>area.width-8) x=event.clientX-area.left-tipW-14;
+    if (y+tipH>area.height-8) y=event.clientY-area.top-tipH-10;
+    tip.style.left=Math.max(8,x)+'px'; tip.style.top=Math.max(8,y)+'px';
+  }
+  function closeRelTip() {
+    document.getElementById('rel-tip').style.display='none';
+    if (linkSel) linkSel.classed('rel-sel',false);
+  }
+
+  // ─── Combo box factory ────────────────────────────────────────────────
+  function makeCombo(inputId, dropId, onSelect) {
+    const input = document.getElementById(inputId);
+    const drop  = document.getElementById(dropId);
+    let allItems = [], activeIdx = -1;
+
+    function highlight(text, q) {
+      if (!q) return text;
+      const i = text.toLowerCase().indexOf(q.toLowerCase());
+      return i<0 ? text : text.slice(0,i)+'<mark>'+text.slice(i,i+q.length)+'</mark>'+text.slice(i+q.length);
+    }
+
+    function getFiltered() {
+      const q = input.value.trim().toLowerCase();
+      return q ? allItems.filter(it => it.toLowerCase().includes(q)) : allItems;
+    }
+
+    function reposition() {
+      const r = input.getBoundingClientRect();
+      drop.style.left = r.left + 'px';
+      drop.style.top  = (r.bottom + 3) + 'px';
+      drop.style.width = r.width + 'px';
+    }
+
+    function refresh() {
+      const q = input.value.trim();
+      const filtered = getFiltered();
+      activeIdx = -1;
+      drop.innerHTML = filtered.map(it => `<div class="combo-item" data-value="${it}">${highlight(it, q)}</div>`).join('');
+      drop.classList.toggle('open', filtered.length > 0);
+      reposition();
+    }
+
+    function closeWithSelect(value) {
+      input.value = value;
+      drop.classList.remove('open');
+      onSelect(value);
+    }
+
+    input.addEventListener('input', refresh);
+    input.addEventListener('focus', refresh);
+    input.addEventListener('keydown', e => {
+      if (!drop.classList.contains('open')) return;
+      const items = drop.querySelectorAll('.combo-item');
+      if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx=Math.min(activeIdx+1,items.length-1); items.forEach((el,i)=>el.classList.toggle('active',i===activeIdx)); items[activeIdx]?.scrollIntoView({block:'nearest'}); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx=Math.max(activeIdx-1,0); items.forEach((el,i)=>el.classList.toggle('active',i===activeIdx)); items[activeIdx]?.scrollIntoView({block:'nearest'}); }
+      else if (e.key === 'Enter' && activeIdx >= 0) { e.preventDefault(); closeWithSelect(items[activeIdx].dataset.value); }
+      else if (e.key === 'Escape') { drop.classList.remove('open'); }
+    });
+    input.addEventListener('blur', () => setTimeout(() => drop.classList.remove('open'), 160));
+
+    drop.addEventListener('mousedown', e => {
+      const item = e.target.closest('.combo-item'); if (!item) return;
+      e.preventDefault(); closeWithSelect(item.dataset.value);
+    });
+
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+
+    return {
+      setItems: items => { allItems = items; },
+      clear: () => { input.value = ''; drop.classList.remove('open'); },
+    };
+  }
+
+  // ─── Populate dropdowns after render ─────────────────────────────────
+  let entityCombo, fieldCombo;
+
+  function populateDropdowns() {
+    const entityNames = [...currentNodes].map(n=>n.id).sort((a,b)=>a.localeCompare(b));
+    const fieldNames  = [...new Set(currentNodes.flatMap(n=>n.entity.fields.map(f=>f.name)))].sort((a,b)=>a.localeCompare(b));
+    entityCombo.setItems(entityNames);
+    fieldCombo.setItems(fieldNames);
+    entityCombo.clear(); fieldCombo.clear();
   }
 
   // ─── Hint ─────────────────────────────────────────────────────────────
   let hintTimer;
-  function hint(msg) {
-    const el = document.getElementById('hint');
-    el.textContent = msg; el.classList.add('on');
-    clearTimeout(hintTimer); hintTimer = setTimeout(clearHint, 3500);
-  }
+  function hint(msg)   { const el=document.getElementById('hint'); el.textContent=msg; el.classList.add('on'); clearTimeout(hintTimer); hintTimer=setTimeout(clearHint,3500); }
   function clearHint() { document.getElementById('hint').classList.remove('on'); }
+
+  // ─── Diagram section collapse ─────────────────────────────────────────
+  let diagramOpen = true;
+  function toggleDiagram() {
+    diagramOpen = !diagramOpen;
+    document.getElementById('diagram-body').classList.toggle('closed', !diagramOpen);
+    document.getElementById('diagram-toggle').textContent = diagramOpen ? '▼' : '▶';
+  }
 
   // ─── UI wiring ────────────────────────────────────────────────────────
   const textarea    = document.getElementById('erd-input');
   const fileInput   = document.getElementById('file-input');
   const renderBtn   = document.getElementById('render-btn');
-  const searchInput = document.getElementById('search-input');
+  const searchText  = document.getElementById('search-text');
   const searchClear = document.getElementById('search-clear');
   const collapseBtn = document.getElementById('collapse-btn');
   const expandBtn   = document.getElementById('expand-btn');
@@ -655,68 +618,80 @@
   const btnForce    = document.getElementById('btn-force');
   const btnDagre    = document.getElementById('btn-dagre');
 
+  // Combo boxes
+  entityCombo = makeCombo('entity-filter', 'entity-drop', name => {
+    searchText.value = ''; clearAllSearchVisual(); fieldCombo.clear();
+    searchClear.style.display = 'block';
+    highlightEntity(name);
+  });
+  fieldCombo = makeCombo('field-filter', 'field-drop', name => {
+    searchText.value = ''; clearAllSearchVisual(); entityCombo.clear();
+    searchClear.style.display = 'block';
+    highlightByField(name);
+  });
+
   renderBtn.addEventListener('click', () => render(textarea.value));
-  textarea.addEventListener('keydown', e => { if ((e.metaKey||e.ctrlKey) && e.key==='Enter') render(textarea.value); });
+  textarea.addEventListener('keydown', e => { if ((e.metaKey||e.ctrlKey)&&e.key==='Enter') render(textarea.value); });
 
   fileInput.addEventListener('change', e => {
-    const f = e.target.files[0]; if (!f) return;
-    const r = new FileReader();
-    r.onload = ev => { textarea.value = ev.target.result; render(textarea.value); };
-    r.readAsText(f);
-    e.target.value = '';
+    const f=e.target.files[0]; if(!f) return;
+    const r=new FileReader(); r.onload=ev=>{ textarea.value=ev.target.result; render(textarea.value); };
+    r.readAsText(f); e.target.value='';
   });
 
-  searchInput.addEventListener('input', e => applySearch(e.target.value));
-  searchClear.addEventListener('click', () => { searchInput.value=''; clearSearch(); });
+  searchText.addEventListener('input', e => {
+    entityCombo.clear(); fieldCombo.clear();
+    const q = e.target.value.trim();
+    searchClear.style.display = q ? 'block' : 'none';
+    applyTextSearch(q);
+  });
 
+  searchClear.addEventListener('click', clearAllSearchInputs);
+
+  document.getElementById('diagram-toggle').addEventListener('click', toggleDiagram);
   collapseBtn.addEventListener('click', () => { sidebar.classList.add('collapsed'); expandBtn.style.display='block'; });
   expandBtn.addEventListener('click',   () => { sidebar.classList.remove('collapsed'); expandBtn.style.display='none'; });
+  document.getElementById('rt-close').addEventListener('click', closeRelTip);
 
-  btnForce.addEventListener('click', () => {
-    currentLayout='force'; btnForce.classList.add('active'); btnDagre.classList.remove('active');
-    switchLayout('force');
-  });
-  btnDagre.addEventListener('click', () => {
-    currentLayout='dagre'; btnDagre.classList.add('active'); btnForce.classList.remove('active');
-    switchLayout('dagre');
-  });
+  btnForce.addEventListener('click', () => { btnForce.classList.add('active'); btnDagre.classList.remove('active'); switchLayout('force'); });
+  btnDagre.addEventListener('click', () => { btnDagre.classList.add('active'); btnForce.classList.remove('active'); switchLayout('dagre'); });
 
   // ─── Default example ──────────────────────────────────────────────────
   textarea.value = `erDiagram
-    CUSTOMER ||--o{ ORDER : places
-    ORDER ||--|{ ORDER_ITEM : contains
-    PRODUCT ||--o{ ORDER_ITEM : "included in"
-    CATEGORY ||--o{ PRODUCT : contains
+    CUSTOMER ||--o{ ORDER : "id = customer_id"
+    ORDER ||--|{ ORDER_ITEM : "id = order_id"
+    PRODUCT ||--o{ ORDER_ITEM : "id = product_id"
+    CATEGORY ||--o{ PRODUCT : "id = category_id"
     CUSTOMER {
-        int    id        PK
-        string name
-        string email
-        string phone
+        int            id            PK
+        varchar(100)   name
+        varchar(255)   email
+        varchar(20)    phone_number
     }
     ORDER {
-        int    id          PK
-        int    customer_id FK
+        int    id            PK
+        int    customer_id   FK
         date   placed_at
         string status
     }
     ORDER_ITEM {
-        int   id         PK
-        int   order_id   FK
-        int   product_id FK
+        int   id          PK
+        int   order_id    FK
+        int   product_id  FK
         int   quantity
         float unit_price
     }
     PRODUCT {
-        int    id          PK
-        int    category_id FK
-        string name
-        float  price
-        int    stock
+        int           id           PK
+        int           category_id  FK
+        varchar(200)  name
+        float         price
+        int           stock_count
     }
     CATEGORY {
-        int    id          PK
-        string name
-        string description
+        int           id           PK
+        varchar(100)  name
+        text          description
     }`;
 
   window.addEventListener('load', () => render(textarea.value));
