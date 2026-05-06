@@ -43,7 +43,9 @@ cp .env.example .env
 | `SMTP_USE_STARTTLS` | No | Enable STARTTLS (default: true) |
 | `SENDER_EMAIL` | Yes | Email address to send from |
 | `ALLOWED_RECIPIENTS` | Yes | Comma-separated list of allowed recipient emails |
-| `APPROVAL_REQUIRED` | No | Require manual approval for all emails (default: false) |
+| `APPROVAL_REQUIRED` | No | Require manual approval for all emails (default: true) |
+| `ADMIN_EMAIL` | No | Email address that receives approval request notifications (required when `APPROVAL_REQUIRED=true` to use the token workflow) |
+| `APPROVAL_TOKEN_TTL_HOURS` | No | Hours before an approval token expires (default: 24, max: 168) |
 | `DAILY_LIMIT` | No | Maximum emails per day per user (default: unlimited) |
 | `THROTTLE_SECONDS` | No | Minimum seconds between sends (default: 0) |
 | `QUOTA_TIMEZONE` | No | Timezone for daily quota reset (default: UTC) |
@@ -60,9 +62,11 @@ mcp-email
 ```
 
 The server exposes tools for:
-- **submit_email**: Submit an email for sending (with optional approval workflow)
-- **list_emails**: View all submitted emails and their status
-- **get_email**: Get details of a specific email
+- **email_submit**: Submit an email for sending (triggers approval workflow if enabled)
+- **email_approve**: Approve a pending email using the approval token
+- **email_reject**: Reject a pending email using the email ID
+- **email_status**: Get the status and details of a specific email
+- **email_list_recent**: List recent email requests
 
 ### Admin CLI
 
@@ -80,12 +84,34 @@ Commands:
 
 ## Email Workflow
 
-1. **Submit**: User submits email via `submit_email` tool
-2. **Validation**: Recipients checked against allowlist, subject/body validated
-3. **Approval** (if enabled): Email stored as `PENDING_APPROVAL` awaiting admin review
-4. **Queue**: Email moved to `READY_TO_SEND` status
-5. **Send**: Email sent via SMTP, marked as `SENT` on success or `FAILED` on error
-6. **Audit**: All state changes recorded in SQLite database
+### Without approval (`APPROVAL_REQUIRED=false`)
+
+1. **Submit**: Agent calls `email_submit`
+2. **Validation**: Recipient checked against allowlist, subject/body validated
+3. **Send**: Email sent via SMTP, marked `SENT` on success or `FAILED` on error
+
+### With approval (`APPROVAL_REQUIRED=true`)
+
+1. **Submit**: Agent calls `email_submit`
+2. **Validation**: Recipient checked against allowlist, subject/body validated
+3. **Notify**: A notification email is sent to `ADMIN_EMAIL` containing:
+   - A short **approval token** (e.g. `K7MR-T2NX`) at the top
+   - The email ID (UUID)
+   - Full draft details: recipient, subject, body, reason
+   - Token expiry time
+4. **Admin review**: Admin reads the notification email and decides
+5. **Approve**: Admin gives the approval token to the AI agent (e.g. `"Approve K7MR-T2NX"`). The agent calls `email_approve(token="K7MR-T2NX")`. The server validates the token and queues the email for sending.
+6. **Reject**: Admin gives the email ID to the AI agent (e.g. `"Reject <id>"`). The agent calls `email_reject(request_id="<id>", reason="...")`. The email is permanently rejected.
+7. **Send**: Approved email is delivered via SMTP.
+
+### Token vs. Email ID
+
+| Action | What to use |
+|--------|-------------|
+| **Approve** | Approval token (`XXXX-XXXX`) |
+| **Reject** | Email ID (UUID) |
+
+The approval token is a one-time secret used **exclusively to approve** an email. It cannot be used to reject. This separation ensures that sharing the token with the AI agent can only result in approval — the admin must make a separate, deliberate decision to reject using the ID.
 
 ## Status Values
 
@@ -138,6 +164,7 @@ src/mcp_email/
 ├── smtp_client.py      # SMTP client wrapper
 ├── policy.py           # Policy enforcement (allowlist, rate limits)
 ├── rate_limits.py      # Rate limiting logic
+├── approval.py         # Approval token generation and notification email builder
 ├── cli.py              # Admin CLI tool
 └── tools/
     └── email.py        # MCP tool definitions
@@ -147,7 +174,9 @@ src/mcp_email/
 
 - **Allowlist Enforcement**: Only configured recipients can receive emails
 - **Plain Text Only**: Prevents HTML injection attacks
-- **Approval Workflow**: Optional human review before sending
+- **Approval Workflow**: Optional human review before sending; token design ensures the AI agent cannot approve emails without a human explicitly handing it the token
+- **Token/ID Separation**: The approval token approves; the email ID rejects. They are different values, so a token leak can only result in approval, not rejection
+- **Short-lived Tokens**: Approval tokens expire after a configurable TTL (default 24 h), preventing stale approvals
 - **Rate Limiting**: Prevents abuse and email flooding
 - **Audit Trail**: Full record of all email activity
 - **Idempotency Keys**: Prevents duplicate sends from retries

@@ -63,6 +63,8 @@ class StoredEmailRequest(BaseModel):
     status: EmailStatus
     created_at: AwareDatetime
     updated_at: AwareDatetime
+    approval_token: Optional[str] = None
+    approval_token_expires_at: Optional[AwareDatetime] = None
     approval_actor: Optional[str] = None
     approval_reason: Optional[str] = None
     transport_message_id: Optional[str] = None

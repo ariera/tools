@@ -100,8 +100,9 @@ def _reject_request(store: SQLiteEmailStore, *, request_id: str, actor: str, rea
 
 def _list_pending(store: SQLiteEmailStore) -> None:
     for request in store.list_by_status(EmailStatus.PENDING_APPROVAL):
+        token_info = f"\ttoken={request.approval_token}" if request.approval_token else ""
         print(
-            f"{request.id}\t{request.created_at.isoformat()}\t{request.to}\t{request.subject}"
+            f"{request.id}\t{request.created_at.isoformat()}\t{request.to}\t{request.subject}{token_info}"
         )
 
 

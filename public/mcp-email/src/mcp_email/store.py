@@ -241,6 +241,18 @@ class SQLiteEmailStore:
             )
         return rejected
 
+    def find_by_approval_token(self, token: str) -> StoredEmailRequest | None:
+        with sqlite3.connect(self.path) as conn:
+            row = conn.execute(
+                """
+                SELECT payload_json FROM email_requests
+                WHERE json_extract(payload_json, '$.approval_token') = ?
+                LIMIT 1
+                """,
+                (token,),
+            ).fetchone()
+        return None if row is None else StoredEmailRequest.model_validate(json.loads(row[0]))
+
     def find_by_idempotency_key(self, idempotency_key: str) -> StoredEmailRequest | None:
         with sqlite3.connect(self.path) as conn:
             return self._find_by_idempotency_key(conn, idempotency_key)

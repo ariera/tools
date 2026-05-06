@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import EmailStr, Field, field_validator, model_validator
@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     sender_name: str = "EMBO Email"
     allowed_recipients: Annotated[list[EmailStr], NoDecode]
     approval_required: bool = True
+    admin_email: Optional[EmailStr] = None
+    approval_token_ttl_hours: int = Field(default=24, ge=1, le=168)
     daily_limit: int = Field(default=10, ge=1, le=1000)
     throttle_seconds: int = Field(default=60, ge=1, le=86400)
     smtp_timeout_seconds: int = Field(default=30, ge=1, le=300)

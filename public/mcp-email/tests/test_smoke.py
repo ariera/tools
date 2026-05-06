@@ -24,7 +24,7 @@ def test_create_mcp_returns_server_like_object(tmp_path):
 def test_create_mcp_registers_email_tools(monkeypatch, tmp_path):
     seen = {}
 
-    def fake_register_email_tools(mcp, *, settings, store):
+    def fake_register_email_tools(mcp, *, settings, store, transport=None):
         seen["mcp"] = mcp
         seen["settings"] = settings
         seen["store_path"] = store.path
