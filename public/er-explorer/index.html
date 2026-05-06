@@ -36,7 +36,6 @@
     .sec-body { display: flex; flex-direction: column; gap: 0.35rem; overflow: hidden; max-height: 600px; transition: max-height 0.22s ease, opacity 0.18s; opacity: 1; }
     .sec-body.closed { max-height: 0; opacity: 0; }
 
-    /* Sections separated by top border */
     .sidebar-sec { padding: 0.3rem 0 0.55rem; }
     .sidebar-sec + .sidebar-sec { border-top: 1px solid #f0f0f0; }
 
@@ -78,6 +77,16 @@
     #expand-btn { display: none; position: absolute; top: 0.6rem; left: 0.6rem; z-index: 10; background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: 0.28rem 0.55rem; font-size: 0.78rem; cursor: pointer; color: #555; }
     #expand-btn:hover { background: #f5f5f7; }
     svg#canvas { width: 100%; height: 100%; display: block; }
+
+    /* ── Canvas controls ── */
+    #canvas-controls { position: absolute; bottom: 1.2rem; right: 0.9rem; display: flex; flex-direction: column; gap: 0.4rem; z-index: 10; }
+    .cc-group { display: flex; flex-direction: column; background: #fff; border: 1px solid #d8d8d8; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.10); overflow: hidden; }
+    .cc-btn { width: 32px; height: 32px; border: none; background: none; cursor: pointer; font-size: 1rem; line-height: 1; color: #444; transition: background 0.1s, color 0.1s; display: flex; align-items: center; justify-content: center; }
+    .cc-btn + .cc-btn { border-top: 1px solid #eee; }
+    .cc-btn:hover:not(:disabled) { background: #f0f0f3; color: #111; }
+    .cc-btn:disabled { opacity: 0.28; cursor: default; }
+    .cc-btn.active { background: #e8f0fc; color: #0055bb; }
+    .cc-btn.hidden { display: none; }
 
     /* ── Nodes ── */
     .node { cursor: pointer; }
@@ -205,6 +214,27 @@
   <div id="canvas-area">
     <button id="expand-btn">▶ Edit</button>
     <svg id="canvas"></svg>
+
+    <!-- Canvas control buttons -->
+    <div id="canvas-controls">
+      <div class="cc-group">
+        <button class="cc-btn" id="cc-zoom-in"  title="Zoom in">+</button>
+        <button class="cc-btn" id="cc-zoom-out" title="Zoom out">−</button>
+      </div>
+      <div class="cc-group">
+        <button class="cc-btn" id="cc-fit-all" title="Fit all">⤢</button>
+        <button class="cc-btn" id="cc-fit-sel" title="Fit selection" disabled>◎</button>
+      </div>
+      <div class="cc-group">
+        <button class="cc-btn" id="cc-relayout" title="Re-layout">↺</button>
+        <button class="cc-btn" id="cc-collapse" title="Collapse all fields">≡</button>
+        <button class="cc-btn" id="cc-freeze"   title="Freeze layout">❄</button>
+      </div>
+      <div class="cc-group">
+        <button class="cc-btn" id="cc-export" title="Export as SVG">↓</button>
+      </div>
+    </div>
+
     <div id="rel-tip">
       <div class="rt-row1">
         <span class="rt-entities" id="rt-entities"></span>
@@ -247,12 +277,16 @@
     const width    = Math.max(MIN_W, Math.min(MAX_W, Math.max(headerW, subW, entity.fields.length ? fieldsW : 0)));
     return { width, typeColX };
   }
-  const nodeH = e => NH + (e.baseTable ? BTH : 0) + e.fields.length * FH + BOTTOM_PAD;
+  const nodeH          = e => NH + (e.baseTable ? BTH : 0) + e.fields.length * FH + BOTTOM_PAD;
+  const nodeHCollapsed = e => NH + (e.baseTable ? BTH : 0) + BOTTOM_PAD;
 
   // ─── State ────────────────────────────────────────────────────────────
-  let simulation   = null, linkSel = null, nodeSel = null;
-  let currentNodes = [], currentLinks = [];
+  let simulation     = null, linkSel = null, nodeSel = null;
+  let currentNodes   = [], currentLinks = [];
   let selectedEntity = null, currentLayout = 'force';
+  let zoomBehavior   = null;
+  let simulationFrozen = false;
+  let allCollapsed     = false;
 
   // ─── Utilities ───────────────────────────────────────────────────────
   const safeId = s => 'n' + s.replace(/[^a-zA-Z0-9]/g, '_');
@@ -349,6 +383,7 @@
   function startForce(nodes, links) {
     const el = document.getElementById('canvas');
     if (simulation) simulation.stop();
+    simulationFrozen = false;
     simulation = d3.forceSimulation(nodes)
       .force('link',    d3.forceLink(links).id(d=>d.id).distance(320).strength(0.5))
       .force('charge',  d3.forceManyBody().strength(-1000))
@@ -357,7 +392,7 @@
       .velocityDecay(0.6)
       .alphaDecay(0.04)
       .on('tick', () => updatePositions(false))
-      .on('end',  () => currentNodes.forEach(n => { n.fx = n.x; n.fy = n.y; }));
+      .on('end',  () => { currentNodes.forEach(n => { n.fx = n.x; n.fy = n.y; }); simulationFrozen = true; updateFreezeBtn(); });
   }
 
   // ─── Dagre layout ────────────────────────────────────────────────────
@@ -379,6 +414,8 @@
 
     if (simulation) { simulation.stop(); simulation = null; }
     closeRelTip(); clearAllSearchVisual();
+    allCollapsed = false; simulationFrozen = false;
+    updateCollapseBtn(); updateFreezeBtn(); updateFitSelBtn();
 
     const svg = d3.select('#canvas');
     svg.selectAll('*').remove();
@@ -403,8 +440,8 @@
     const lg = root.append('g').attr('id','links');
     const ng = root.append('g').attr('id','nodes');
 
-    const zoom = d3.zoom().scaleExtent([0.06,5]).on('zoom', e => root.attr('transform', e.transform));
-    svg.call(zoom).on('dblclick.zoom', null);
+    zoomBehavior = d3.zoom().scaleExtent([0.06,5]).on('zoom', e => root.attr('transform', e.transform));
+    svg.call(zoomBehavior).on('dblclick.zoom', null);
     svg.on('click', e => { if (!e.target.closest('.node') && !e.target.closest('.link')) { clearHighlight(); closeRelTip(); } });
 
     linkSel = lg.selectAll('.link').data(links).join('g').attr('class','link');
@@ -414,7 +451,7 @@
 
     nodeSel = ng.selectAll('.node').data(nodes, d=>d.id).join('g').attr('class','node').attr('data-id',d=>d.id)
       .call(d3.drag()
-        .on('start',(e,d)=>{ if(currentLayout==='force'&&simulation){currentNodes.forEach(n=>{n.fx=null;n.fy=null;});if(!e.active)simulation.alphaTarget(0.1).restart();d.fx=d.x;d.fy=d.y;} })
+        .on('start',(e,d)=>{ if(currentLayout==='force'&&simulation){currentNodes.forEach(n=>{n.fx=null;n.fy=null;});simulationFrozen=false;updateFreezeBtn();if(!e.active)simulation.alphaTarget(0.1).restart();d.fx=d.x;d.fy=d.y;} })
         .on('drag', (e,d)=>{ if(currentLayout==='force'){d.fx=e.x;d.fy=e.y;}else{d.x=e.x;d.y=e.y;updatePositions(false);} })
         .on('end',  (e,d)=>{ if(currentLayout==='force'&&simulation){if(!e.active)simulation.alphaTarget(0);d.fx=null;d.fy=null;} })
       )
@@ -435,7 +472,7 @@
       const fieldsY = NH + (d.entity.baseTable ? BTH : 0);
 
       if (d.entity.fields.length > 0) {
-        g.append('line').attr('class','div').attr('x1',0).attr('y1',fieldsY).attr('x2',d.width).attr('y2',fieldsY);
+        g.append('line').attr('class','div fields-div').attr('x1',0).attr('y1',fieldsY).attr('x2',d.width).attr('y2',fieldsY);
         d.entity.fields.forEach((f, i) => {
           const y = fieldsY + i * FH + FH/2;
           g.append('text').attr('class','ftype').attr('x',FX).attr('y',y).text(f.type);
@@ -455,6 +492,7 @@
   // ─── Layout switch ────────────────────────────────────────────────────
   function switchLayout(to) {
     currentLayout = to;
+    document.getElementById('cc-freeze').classList.toggle('hidden', to !== 'force');
     if (!currentNodes.length) return;
     if (to==='force') startForce(currentNodes, currentLinks);
     else { if (simulation){simulation.stop();simulation=null;} applyDagre(currentNodes,currentLinks); updatePositions(true); }
@@ -472,6 +510,7 @@
     nodeSel.classed('selected',d=>d.id===name).classed('neighbour',d=>d.id!==name&&nbrs.has(d.id)).classed('dimmed',d=>d.id!==name&&!nbrs.has(d.id));
     linkSel.classed('hl-active',(_,i)=>activeIdx.has(i)).classed('dimmed',(_,i)=>!activeIdx.has(i));
     hint('Click entity again or background to clear');
+    updateFitSelBtn();
   }
 
   // ─── Field highlight (field-dropdown) ────────────────────────────────
@@ -484,18 +523,17 @@
     currentLinks.forEach((l,i)=>{ if(matchedIds.has(l.source.id)||matchedIds.has(l.target.id)) activeIdx.add(i); });
     linkSel.classed('hl-active',(_,i)=>activeIdx.has(i)).classed('dimmed',(_,i)=>!activeIdx.has(i));
     hint(`Showing all entities with field "${fieldName}"`);
+    updateFitSelBtn();
   }
 
-  // ─── Base table highlight (basetable-dropdown) ────────────────────────
+  // ─── Base table highlight — nodes only, links stay neutral ────────────
   function highlightByBaseTable(baseTable) {
     clearAllSearchVisual();
     selectedEntity = null;
     const matchedIds = new Set(currentNodes.filter(n => n.entity.baseTable === baseTable).map(n => n.id));
     nodeSel.classed('selected', d => matchedIds.has(d.id)).classed('dimmed', d => !matchedIds.has(d.id)).classed('neighbour', false);
-    const activeIdx = new Set();
-    currentLinks.forEach((l, i) => { if (matchedIds.has(l.source.id) || matchedIds.has(l.target.id)) activeIdx.add(i); });
-    linkSel.classed('hl-active', (_, i) => activeIdx.has(i)).classed('dimmed', (_, i) => !activeIdx.has(i));
     hint(`Showing entities on base table "${baseTable}"`);
+    updateFitSelBtn();
   }
 
   function clearHighlight() {
@@ -503,6 +541,7 @@
     if (nodeSel) nodeSel.classed('selected neighbour dimmed', false);
     if (linkSel) linkSel.classed('hl-active dimmed', false);
     clearHint();
+    updateFitSelBtn();
   }
 
   // ─── Text search ──────────────────────────────────────────────────────
@@ -564,6 +603,148 @@
     if (linkSel) linkSel.classed('rel-sel',false);
   }
 
+  // ─── Canvas controls ──────────────────────────────────────────────────
+  function zoomIn()  { if (zoomBehavior) d3.select('#canvas').transition().duration(220).call(zoomBehavior.scaleBy, 1.35); }
+  function zoomOut() { if (zoomBehavior) d3.select('#canvas').transition().duration(220).call(zoomBehavior.scaleBy, 1/1.35); }
+
+  function fitNodes(nodes, maxScale) {
+    if (!nodes.length || !zoomBehavior) return;
+    const svgEl = document.getElementById('canvas');
+    const W = svgEl.clientWidth, H = svgEl.clientHeight;
+    const pad = 48;
+    let x0=Infinity, y0=Infinity, x1=-Infinity, y1=-Infinity;
+    nodes.forEach(n => {
+      x0 = Math.min(x0, n.x - n.width/2);
+      y0 = Math.min(y0, n.y - n.height/2);
+      x1 = Math.max(x1, n.x + n.width/2);
+      y1 = Math.max(y1, n.y + n.height/2);
+    });
+    const bw = Math.max(x1-x0, 1), bh = Math.max(y1-y0, 1);
+    const scale = Math.min((W-pad*2)/bw, (H-pad*2)/bh, maxScale);
+    const tx = W/2 - (x0+x1)/2 * scale;
+    const ty = H/2 - (y0+y1)/2 * scale;
+    d3.select('#canvas').transition().duration(450).call(zoomBehavior.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+  }
+
+  function fitAll() { fitNodes(currentNodes, 1.5); }
+
+  function fitSelection() {
+    if (!nodeSel) return;
+    const targets = [];
+    nodeSel.each(function(d) {
+      if (d3.select(this).classed('selected') || d3.select(this).classed('neighbour')) targets.push(d);
+    });
+    if (targets.length) fitNodes(targets, 3);
+  }
+
+  function updateFitSelBtn() {
+    const btn = document.getElementById('cc-fit-sel');
+    if (!btn) return;
+    let has = false;
+    if (nodeSel) nodeSel.each(function() { if (d3.select(this).classed('selected') || d3.select(this).classed('neighbour')) has = true; });
+    btn.disabled = !has;
+  }
+
+  function relayout() {
+    if (!currentNodes.length) return;
+    closeRelTip();
+    if (currentLayout === 'force') {
+      const svgEl = document.getElementById('canvas');
+      const W = svgEl.clientWidth, H = svgEl.clientHeight;
+      currentNodes.forEach(n => { n.fx=null; n.fy=null; n.x=W/2+(Math.random()-0.5)*300; n.y=H/2+(Math.random()-0.5)*300; n.vx=0; n.vy=0; });
+      startForce(currentNodes, currentLinks);
+    } else {
+      applyDagre(currentNodes, currentLinks);
+      updatePositions(true);
+    }
+  }
+
+  function applyCollapseState() {
+    if (!nodeSel) return;
+    currentNodes.forEach(n => {
+      n.height = allCollapsed ? nodeHCollapsed(n.entity) : nodeH(n.entity);
+    });
+    nodeSel.each(function(d) {
+      const g = d3.select(this);
+      g.select('rect.bg').attr('height', d.height);
+      const hide = allCollapsed ? 'none' : null;
+      g.selectAll('line.fields-div, text.ftype, text.fname, text.fcon').style('display', hide);
+    });
+    if (simulation) {
+      simulation.force('collide', d3.forceCollide(d => Math.max(d.width/2, d.height/2) + 30));
+      currentNodes.forEach(n => { n.fx=null; n.fy=null; });
+      simulationFrozen = false;
+      simulation.alpha(0.3).alphaTarget(0).restart();
+      updateFreezeBtn();
+    } else if (currentLayout === 'dagre') {
+      applyDagre(currentNodes, currentLinks);
+      updatePositions(true);
+    }
+    updateCollapseBtn();
+  }
+
+  function toggleCollapseAll() { allCollapsed = !allCollapsed; applyCollapseState(); }
+
+  function updateCollapseBtn() {
+    const btn = document.getElementById('cc-collapse');
+    if (!btn) return;
+    btn.classList.toggle('active', allCollapsed);
+    btn.title = allCollapsed ? 'Expand all fields' : 'Collapse all fields';
+  }
+
+  function toggleFreeze() {
+    if (!simulation || currentLayout !== 'force') return;
+    simulationFrozen = !simulationFrozen;
+    if (simulationFrozen) {
+      simulation.stop();
+      currentNodes.forEach(n => { n.fx = n.x; n.fy = n.y; });
+    } else {
+      currentNodes.forEach(n => { n.fx = null; n.fy = null; });
+      simulation.alpha(0.3).alphaTarget(0).restart();
+    }
+    updateFreezeBtn();
+  }
+
+  function updateFreezeBtn() {
+    const btn = document.getElementById('cc-freeze');
+    if (!btn) return;
+    btn.classList.toggle('active', simulationFrozen);
+    btn.title = simulationFrozen ? 'Unfreeze layout' : 'Freeze layout';
+  }
+
+  function exportSVG() {
+    if (!currentNodes.length) return;
+    const svgEl = document.getElementById('canvas');
+    const clone = svgEl.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+    // remove zoom transform; set viewBox to show the full graph
+    const rootG = clone.querySelector('#root');
+    if (rootG) rootG.removeAttribute('transform');
+    const pad = 30;
+    let x0=Infinity, y0=Infinity, x1=-Infinity, y1=-Infinity;
+    currentNodes.forEach(n => {
+      x0=Math.min(x0,n.x-n.width/2-pad); y0=Math.min(y0,n.y-n.height/2-pad);
+      x1=Math.max(x1,n.x+n.width/2+pad); y1=Math.max(y1,n.y+n.height/2+pad);
+    });
+    clone.setAttribute('viewBox', `${x0} ${y0} ${x1-x0} ${y1-y0}`);
+    clone.setAttribute('width',  x1-x0);
+    clone.setAttribute('height', y1-y0);
+
+    // embed page styles so the file is self-contained
+    const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    styleEl.textContent = document.querySelector('style').textContent;
+    clone.insertBefore(styleEl, clone.firstChild);
+
+    const blob = new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'er-diagram.svg';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   // ─── Combo box factory ────────────────────────────────────────────────
   function makeCombo(inputId, dropId, onSelect) {
     const input = document.getElementById(inputId);
@@ -575,19 +756,16 @@
       const i = text.toLowerCase().indexOf(q.toLowerCase());
       return i<0 ? text : text.slice(0,i)+'<mark>'+text.slice(i,i+q.length)+'</mark>'+text.slice(i+q.length);
     }
-
     function getFiltered() {
       const q = input.value.trim().toLowerCase();
       return q ? allItems.filter(it => it.toLowerCase().includes(q)) : allItems;
     }
-
     function reposition() {
       const r = input.getBoundingClientRect();
       drop.style.left = r.left + 'px';
       drop.style.top  = (r.bottom + 3) + 'px';
       drop.style.width = r.width + 'px';
     }
-
     function refresh() {
       const q = input.value.trim();
       const filtered = getFiltered();
@@ -596,7 +774,6 @@
       drop.classList.toggle('open', filtered.length > 0);
       reposition();
     }
-
     function closeWithSelect(value) {
       input.value = value;
       drop.classList.remove('open');
@@ -614,12 +791,10 @@
       else if (e.key === 'Escape') { drop.classList.remove('open'); }
     });
     input.addEventListener('blur', () => setTimeout(() => drop.classList.remove('open'), 160));
-
     drop.addEventListener('mousedown', e => {
       const item = e.target.closest('.combo-item'); if (!item) return;
       e.preventDefault(); closeWithSelect(item.dataset.value);
     });
-
     window.addEventListener('scroll', reposition, true);
     window.addEventListener('resize', reposition);
 
@@ -709,6 +884,16 @@
 
   btnForce.addEventListener('click', () => { btnForce.classList.add('active'); btnDagre.classList.remove('active'); switchLayout('force'); });
   btnDagre.addEventListener('click', () => { btnDagre.classList.add('active'); btnForce.classList.remove('active'); switchLayout('dagre'); });
+
+  // Canvas control buttons
+  document.getElementById('cc-zoom-in') .addEventListener('click', zoomIn);
+  document.getElementById('cc-zoom-out').addEventListener('click', zoomOut);
+  document.getElementById('cc-fit-all') .addEventListener('click', fitAll);
+  document.getElementById('cc-fit-sel') .addEventListener('click', fitSelection);
+  document.getElementById('cc-relayout').addEventListener('click', relayout);
+  document.getElementById('cc-collapse').addEventListener('click', toggleCollapseAll);
+  document.getElementById('cc-freeze')  .addEventListener('click', toggleFreeze);
+  document.getElementById('cc-export')  .addEventListener('click', exportSVG);
 
   // ─── Default example ──────────────────────────────────────────────────
   textarea.value = `erDiagram
